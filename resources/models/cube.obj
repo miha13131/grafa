@@ -1,0 +1,47 @@
+# Cube.obj
+# Jednoduchou kostku vytvořenou ručně
+# 8 vrcholů, 12 trojúhelníků (6 stěn)
+
+# Vrcholy (pozice)
+v -0.5 -0.5 -0.5
+v  0.5 -0.5 -0.5
+v  0.5  0.5 -0.5
+v -0.5  0.5 -0.5
+v -0.5 -0.5  0.5
+v  0.5 -0.5  0.5
+v  0.5  0.5  0.5
+v -0.5  0.5  0.5
+
+# Texturové koordináty
+vt 0.0 0.0
+vt 1.0 0.0
+vt 1.0 1.0
+vt 0.0 1.0
+
+# Normály
+vn  0.0  0.0 -1.0  # přední strana
+vn  0.0  0.0  1.0  # zadní strana
+vn  0.0 -1.0  0.0  # spodní strana
+vn  0.0  1.0  0.0  # horní strana
+vn -1.0  0.0  0.0  # levá strana
+vn  1.0  0.0  0.0  # pravá strana
+
+# Plochy (6 stěn)
+# Přední strana
+f 1/1/1 2/2/1 3/3/1
+f 1/1/1 3/3/1 4/4/1
+# Zadní strana
+f 5/1/2 8/4/2 7/3/2
+f 5/1/2 7/3/2 6/2/2
+# Spodní strana
+f 1/1/3 5/2/3 6/3/3
+f 1/1/3 6/3/3 2/4/3
+# Horní strana
+f 4/1/4 3/2/4 7/3/4
+f 4/1/4 7/3/4 8/4/4
+# Levá strana
+f 1/1/5 4/2/5 8/3/5
+f 1/1/5 8/3/5 5/4/5
+# Pravá strana
+f 2/1/6 6/2/6 7/3/6
+f 2/1/6 7/3/6 3/4/6

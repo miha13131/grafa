@@ -1,0 +1,13 @@
+{
+    "graphics": {
+        "antialiasing": {
+            "enabled": false,
+            "samples": 4
+        }
+    },
+    "window": {
+        "height": 600,
+        "title": "OpenGL Maze Demo",
+        "width": 800
+    }
+}
