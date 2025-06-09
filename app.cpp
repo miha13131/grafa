@@ -28,7 +28,14 @@ const char* fragmentShaderSource = R"(
     }
 )";
 
-// app.cpp
+// Utility function to check for OpenGL errors
+void checkGLError(const std::string& context) {
+    GLenum err;
+    while ((err = glGetError()) != GL_NO_ERROR) {
+        std::cerr << "OpenGL error at " << context << ": " << err << std::endl;
+    }
+}
+
 App::App() : lastX(400.0), lastY(300.0), firstMouse(true), fov(DEFAULT_FOV) {
     try {
         heightmap = loadHeightmap("resources/textures/heightmap.png");
@@ -40,21 +47,11 @@ App::App() : lastX(400.0), lastY(300.0), firstMouse(true), fov(DEFAULT_FOV) {
         std::cout << "Using default heightmap: 15x15" << std::endl;
     }
 
-    // Načtení textury pro ImGUI
-    myTexture = textureInit("resources/my_favourite_texture.jpg");
-    if (myTexture == 0) {
-        std::cerr << "Failed to load texture for ImGUI" << std::endl;
-    }
-    else {
-        std::cout << "Texture loaded: my_favourite_texture.jpg" << std::endl;
-    }
-
     float tileSizeGL = 1.0f;
     float maxHeight = 20.0f;
     int width = heightmap.cols;
     int height = heightmap.rows;
 
-    // Najdi nejvyšší bod v heightmapě
     uchar maxValue = 0;
     int max_hm_x = 0;
     int max_hm_z = 0;
@@ -70,18 +67,64 @@ App::App() : lastX(400.0), lastY(300.0), firstMouse(true), fov(DEFAULT_FOV) {
     }
     std::cout << "Max heightmap value: " << (int)maxValue << " at (" << max_hm_x << ", " << max_hm_z << ")" << std::endl;
 
-    // Uložení maximální výšky terénu
     maxTerrainHeight = maxValue / 255.0f * maxHeight;
     std::cout << "Max terrain height: " << maxTerrainHeight << std::endl;
 
-    // Převod indexů na OpenGL souřadnice
-    float startX = (static_cast<float>(max_hm_x) / width) * 15.0f * tileSizeGL;
-    float startZ = (static_cast<float>(max_hm_z) / height) * 15.0f * tileSizeGL;
-    float heightValue = maxValue / 255.0f * maxHeight;
+    float bunnyHeight = heightmap.at<uchar>(200, 200) / 255.0f * maxHeight;
+    camera = Camera(glm::vec3(200.0f * tileSizeGL, bunnyHeight + 5.0f, 195.0f * tileSizeGL));
 
-    std::cout << "Start position: (" << startX << ", " << heightValue << ", " << startZ << ")" << std::endl;
+    // Initialize directional light (sun)
+    directionalLight = Light{
+        glm::vec3(200.0f, 100.0f, 200.0f), // Position (unused for directional)
+        glm::vec3(-0.2f, -1.0f, -0.3f),   // Direction
+        glm::vec3(0.7f),                   // Ambient
+        glm::vec3(0.8f),                   // Diffuse
+        glm::vec3(1.0f),                   // Specular
+        1.0f, 0.0f, 0.0f,                  // Attenuation (unused)
+        0.0f, 0.0f                        // Cutoff (unused)
+    };
 
-    camera = Camera(glm::vec3(startX, heightValue + 0.5f, startZ));
+    // Initialize point lights
+    pointLights.resize(3);
+    pointLights[0] = Light{ // Near tree - green
+        glm::vec3(110.0f, 30.0f, 110.0f),
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.2f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        glm::vec3(0.0f, 1.0f, 0.0f),
+        1.0f, 0.001f, 0.00001f, // Reduced attenuation
+        0.0f, 0.0f
+    };
+    pointLights[1] = Light{ // Near bunny - red
+        glm::vec3(210.0f, 30.0f, 210.0f),
+        glm::vec3(0.0f),
+        glm::vec3(0.2f, 0.0f, 0.0f),
+        glm::vec3(1.0f, 0.0f, 0.0f),
+        glm::vec3(1.0f, 0.0f, 0.0f),
+        1.0f, 0.001f, 0.00001f, // Reduced attenuation
+        0.0f, 0.0f
+    };
+    pointLights[2] = Light{ // Near house - blue
+        glm::vec3(310.0f, 30.0f, 310.0f),
+        glm::vec3(0.0f),
+        glm::vec3(0.0f, 0.0f, 0.2f),
+        glm::vec3(0.0f, 0.0f, 1.0f),
+        glm::vec3(0.0f, 0.0f, 1.0f),
+        1.0f, 0.001f, 0.00001f, // Reduced attenuation
+        0.0f, 0.0f
+    };
+
+    // Initialize spotlight (attached to camera)
+    spotLight = Light{
+        camera.Position,
+        camera.Front,
+        glm::vec3(0.1f),                   // Ambient
+        glm::vec3(1.0f),                   // Diffuse
+        glm::vec3(1.0f),                   // Specular
+        1.0f, 0.01f, 0.001f,              // Reduced attenuation
+        cos(glm::radians(20.0f)),          // Wider cutoff
+        cos(glm::radians(25.0f))           // Wider outer cutoff
+    };
 }
 
 App::~App() {
@@ -94,22 +137,74 @@ App::~App() {
         delete wall;
     }
     maze_walls.clear();
-    for (auto& bunny : transparent_bunnies) {
-        delete bunny;
+    for (auto& obj : transparent_objects) {
+        delete obj;
     }
-    transparent_bunnies.clear();
+    transparent_objects.clear();
+    for (auto& model : models) {
+        delete model;
+    }
+    models.clear();
+
+    glDeleteTextures(1, &myTexture);
+    glDeleteTextures(transparent_textures.size(), transparent_textures.data());
+    transparent_textures.clear();
+    glDeleteTextures(model_textures.size(), model_textures.data());
+    model_textures.clear();
+
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
     glDeleteProgram(shaderProgram);
 
-    // Uklid ImGUI
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
 }
 
-bool App::init(GLFWwindow* win) {
-    window = win;
+void App::init_glfw() {
+    json config = load_config();
+    bool antialiasing_enabled;
+    int samples;
+    validate_antialiasing_settings(config, antialiasing_enabled, samples);
+
+    if (!glfwInit()) {
+        throw std::runtime_error("GLFW can not be initialized.");
+    }
+
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+
+    if (antialiasing_enabled) {
+        glfwWindowHint(GLFW_SAMPLES, samples);
+    }
+    else {
+        glfwWindowHint(GLFW_SAMPLES, 0);
+    }
+
+    int window_width = config["window"]["width"].get<int>();
+    int window_height = config["window"]["height"].get<int>();
+    std::string window_title = config["window"]["title"].get<std::string>();
+
+    window = glfwCreateWindow(window_width, window_height, window_title.c_str(), nullptr, nullptr);
+    if (!window) {
+        glfwTerminate();
+        throw std::runtime_error("GLFW window can not be created.");
+    }
+
+    glfwMakeContextCurrent(window);
+    glfwSetWindowUserPointer(window, this);
+
+    if (glewInit() != GLEW_OK) {
+        throw std::runtime_error("GLEW can not be initialized.");
+    }
+
+    if (antialiasing_enabled) {
+        glEnable(GL_MULTISAMPLE);
+    }
+}
+
+bool App::init() {
     fov = DEFAULT_FOV;
 
     if (!GLEW_ARB_direct_state_access) {
@@ -117,7 +212,6 @@ bool App::init(GLFWwindow* win) {
         return false;
     }
 
-    glfwSetWindowUserPointer(window, this);
     glfwSetFramebufferSizeCallback(window, fbsize_callback);
     glfwSetScrollCallback(window, scroll_callback);
     glfwSetKeyCallback(window, key_callback);
@@ -132,7 +226,6 @@ bool App::init(GLFWwindow* win) {
     glfwGetFramebufferSize(window, &width, &height);
     glViewport(0, 0, width, height);
 
-    // Inicializace ImGUI
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -153,6 +246,14 @@ bool App::init(GLFWwindow* win) {
 }
 
 void App::init_assets() {
+    myTexture = textureInit("resources/textures/grass.png");
+    if (myTexture == 0) {
+        std::cerr << "Failed to load texture for ImGUI" << std::endl;
+    }
+    else {
+        std::cout << "Texture loaded: grass.png" << std::endl;
+    }
+
     try {
         std::cout << "Loading shaders..." << std::endl;
         shader = ShaderProgram("resources/shaders/tex.vert", "resources/shaders/tex.frag");
@@ -174,12 +275,22 @@ void App::init_assets() {
     }
 
     try {
-        std::cout << "Creating transparent bunnies..." << std::endl;
-        createTransparentBunnies();
-        std::cout << "Transparent bunnies created successfully" << std::endl;
+        std::cout << "Creating transparent objects..." << std::endl;
+        createTransparentObjects();
+        std::cout << "Transparent objects created successfully" << std::endl;
     }
     catch (const std::exception& e) {
-        std::cerr << "Transparent bunnies creation error: " << e.what() << std::endl;
+        std::cerr << "Transparent objects creation error: " << e.what() << std::endl;
+        throw;
+    }
+
+    try {
+        std::cout << "Creating models..." << std::endl;
+        createModels();
+        std::cout << "Models created successfully" << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Models creation error: " << e.what() << std::endl;
         throw;
     }
 }
@@ -221,27 +332,152 @@ void App::init_triangle() {
     glBindVertexArray(0);
 }
 
-void App::createTransparentBunnies() {
-    GLuint bunnyTexture = textureInit("resources/textures/kralik.jpg");
-    std::vector<glm::vec3> bunny_positions = {
-        glm::vec3(0.0f, 5.0f, 3.0f),
-        glm::vec3(20.0f, 5.0f, 7.0f),
-        glm::vec3(40.0f, 5.0f, 5.0f)
-    };
-    std::vector<glm::vec4> bunny_colors = {
-        glm::vec4(1.0f, 0.3f, 0.3f, 0.8f),
-        glm::vec4(0.3f, 1.0f, 0.3f, 0.6f),
-        glm::vec4(0.3f, 0.3f, 1.0f, 0.4f)
+void App::createTransparentObjects() {
+    // Clear previous transparent objects and textures
+    for (auto& obj : transparent_objects) {
+        delete obj;
+    }
+    transparent_objects.clear();
+    transparent_textures.clear();
+
+    // Načtení textury kralik.jpg
+    GLuint objectTexture = textureInit("resources/textures/kralik.jpg");
+    if (objectTexture == 0) {
+        std::cerr << "Failed to load texture kralik.jpg for transparent objects" << std::endl;
+    }
+    else {
+        transparent_textures.push_back(objectTexture);
+    }
+
+    // Terrain dimensions
+    int width = heightmap.cols;
+    int height = heightmap.rows;
+    float tileSizeGL = 1.0f;
+    float maxHeight = 20.0f;
+
+    // Fixed positions for three objects
+    std::vector<glm::vec3> positions = {
+        glm::vec3(100.0f * tileSizeGL, heightmap.at<uchar>(100, 100) / 255.0f * maxHeight + 1.0f, 100.0f * tileSizeGL), // Tree
+        glm::vec3(200.0f * tileSizeGL, heightmap.at<uchar>(200, 200) / 255.0f * maxHeight + 2.0f, 200.0f * tileSizeGL), // Bunny
+        glm::vec3(300.0f * tileSizeGL, heightmap.at<uchar>(300, 300) / 255.0f * maxHeight + 1.0f, 300.0f * tileSizeGL)  // House
     };
 
+    // Colors with alpha for transparency
+    std::vector<glm::vec4> colors = {
+        glm::vec4(0.3f, 1.0f, 0.3f, 0.8f), // Tree - zelený
+        glm::vec4(1.0f, 0.3f, 0.3f, 0.6f), // Bunny - červený
+        glm::vec4(0.3f, 0.3f, 1.0f, 0.4f)  // House - modrý
+    };
+
+    // Model paths
+    std::vector<std::string> modelPaths = {
+        "resources/models/tree.obj",
+        "resources/models/bunny_tri_vnt.obj",
+        "resources/models/house.obj"
+    };
+
+    // Scales for each object
+    std::vector<glm::vec3> scales = {
+        glm::vec3(1.0f, 1.0f, 1.0f), // Tree
+        glm::vec3(1.0f, 1.0f, 1.0f), // Bunny
+        glm::vec3(1.0f, 1.0f, 1.0f)  // House
+    };
+
+    // Create models with fixed scale and apply texture
     for (int i = 0; i < 3; i++) {
-        Model* bunny = new Model("resources/models/teapot_tri_vnt.obj", shader);
-        bunny->meshes[0].texture_id = bunnyTexture;
-        bunny->meshes[0].diffuse_material = bunny_colors[i];
-        bunny->origin = bunny_positions[i];
-        bunny->scale = glm::vec3(0.5f, 0.5f, 0.5f);
-        bunny->transparent = true;
-        transparent_bunnies.push_back(bunny);
+        Model* model = new Model(modelPaths[i], shader);
+        if (!model->meshes.empty()) {
+            model->meshes[0].texture_id = objectTexture; // Použití textury
+            model->meshes[0].diffuse_material = colors[i];
+        }
+        model->origin = positions[i];
+        model->scale = scales[i];
+        model->transparent = true;
+        transparent_objects.push_back(model);
+        std::cout << "Placed transparent object " << i << " at position ("
+            << positions[i].x << ", " << positions[i].y << ", " << positions[i].z << ")\n";
+    }
+}
+
+void App::createModels() {
+    // Clear previous models and textures
+    for (auto* model : models) {
+        delete model;
+    }
+    models.clear();
+    model_textures.clear();
+
+    // Načtení textur
+    std::vector<std::string> texturePaths = {
+        "resources/textures/krabice.jpg", // Pro krychli
+        "resources/textures/Cat.jpg",     // Pro kočku
+        "resources/textures/Tractor.jpg"  // Pro traktor
+    };
+
+    for (const auto& path : texturePaths) {
+        GLuint modelTexture = textureInit(path);
+        if (modelTexture == 0) {
+            std::cerr << "Failed to load texture " << path << " for models" << std::endl;
+        }
+        else {
+            model_textures.push_back(modelTexture);
+            std::cout << "Successfully loaded texture: " << path << std::endl;
+        }
+    }
+
+    // Terrain dimensions
+    int width = heightmap.cols;
+    int height = heightmap.rows;
+    float tileSizeGL = 1.0f;
+    float maxHeight = 20.0f;
+
+    // Fixed positions for three models, all at x = 150, varying z
+    std::vector<glm::vec3> positions = {
+        glm::vec3(150.0f * tileSizeGL, heightmap.at<uchar>(150, 150) / 255.0f * maxHeight + 1.0f, 150.0f * tileSizeGL), // Cube
+        glm::vec3(150.0f * tileSizeGL, heightmap.at<uchar>(150, 160) / 255.0f * maxHeight + 1.0f, 160.0f * tileSizeGL), // Cat
+        glm::vec3(150.0f * tileSizeGL, heightmap.at<uchar>(150, 170) / 255.0f * maxHeight + 1.0f, 170.0f * tileSizeGL)  // Tractor
+    };
+
+    // Colors with alpha = 1.0 for opacity, neutral for all to use only texture
+    std::vector<glm::vec4> colors = {
+        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), // Cube - neutrální barva, pouze textura
+        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), // Cat - neutrální barva, pouze textura
+        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)  // Tractor - neutrální barva, pouze textura
+    };
+
+    // Model paths
+    std::vector<std::string> modelPaths = {
+        "resources/models/cube.obj",
+        "resources/models/cat.obj",
+        "resources/models/Tractor.obj"
+    };
+
+    // Scales for each model, smaller for cat and tractor
+    std::vector<glm::vec3> scales = {
+        glm::vec3(1.0f, 1.0f, 1.0f),  // Cube
+        glm::vec3(0.5f, 0.5f, 0.5f),  // Cat - zmenšen na polovinu
+        glm::vec3(0.7f, 0.7f, 0.7f)   // Tractor - zmenšen na 70%
+    };
+
+    // Create models with fixed scale and apply texture
+    for (int i = 0; i < 3; i++) {
+        Model* model = new Model(modelPaths[i], shader);
+        if (!model->meshes.empty()) {
+            model->meshes[0].texture_id = model_textures[i]; // Použití odpovídající textury
+            model->meshes[0].diffuse_material = colors[i];
+        }
+        model->origin = positions[i];
+        model->scale = scales[i];
+        model->transparent = false; // Neprůhledné modely
+
+        // Převrátit kočku kolem osy y (rotace o 180 stupňů)
+        if (i == 1) { // Cat je druhý model (index 1)
+            model->orientation = glm::vec3(0.0f, glm::radians(180.0f), 0.0f);
+        }
+
+        models.push_back(model);
+        std::cout << "Placed model " << i << " at position ("
+            << positions[i].x << ", " << positions[i].y << ", " << positions[i].z << ")\n";
     }
 }
 
@@ -249,23 +485,24 @@ GLuint App::textureInit(const std::filesystem::path& filepath) {
     GLuint textureID;
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
+    checkGLError("After glBindTexture in textureInit");
 
-    // Načtení obrázku pomocí OpenCV
     cv::Mat image = cv::imread(filepath.string(), cv::IMREAD_COLOR);
     if (image.empty()) {
         std::cerr << "Failed to load texture: " << filepath << std::endl;
+        glBindTexture(GL_TEXTURE_2D, 0);
         glDeleteTextures(1, &textureID);
         return 0;
     }
 
-    // Převod BGR (OpenCV) na RGB
     cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
 
-    // Nahrávání textury do OpenGL
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.cols, image.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, image.data);
-    glGenerateMipmap(GL_TEXTURE_2D);
+    checkGLError("After glTexImage2D in textureInit");
 
-    // Parametry textury
+    glGenerateMipmap(GL_TEXTURE_2D);
+    checkGLError("After glGenerateMipmap in textureInit");
+
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
@@ -314,7 +551,7 @@ void App::createTerrainModel() {
     int width = heightmap.cols;
     int height = heightmap.rows;
     float tileSizeGL = 1.0f;
-    float maxHeight = 20.0f; // Zvýšeno z 5.0 na 20.0
+    float maxHeight = 20.0f;
 
     GLuint terrainTexture = textureInit("resources/textures/grass.png");
 
@@ -373,13 +610,11 @@ void App::createTerrainModel() {
 }
 
 void App::createMazeModel() {
-    // Vytvoření terénu
     createTerrainModel();
 
-    // Vytvoření prázdné mapy (pro kompatibilitu s pohybem kamery)
     const int width = 15;
     const int height = 15;
-    maze_map = cv::Mat(height, width, CV_8U, cv::Scalar('.')); // Všechny dlaždice jsou průchozí
+    maze_map = cv::Mat(height, width, CV_8U, cv::Scalar('.'));
 }
 
 uchar App::getmap(cv::Mat& map, int x, int y) {
@@ -387,7 +622,6 @@ uchar App::getmap(cv::Mat& map, int x, int y) {
     y = std::clamp(y, 0, map.rows - 1);
     return map.at<uchar>(y, x);
 }
-
 
 bool App::run() {
     if (!window) {
@@ -399,25 +633,15 @@ bool App::run() {
     shader.activate();
     update_projection_matrix();
     shader.setUniform("uV_m", camera.GetViewMatrix());
-    glm::vec3 lightPos(10.0f, maxTerrainHeight + 10.0f, 10.0f); // Y je nad maximální výškou terénu
-    glm::vec3 lightColor(1.0f, 1.0f, 1.0f);
-    shader.setUniform("lightPos", lightPos);
-    shader.setUniform("lightColor", lightColor);
+    shader.setUniform("uP_m", projection_matrix);
     shader.setUniform("viewPos", camera.Position);
 
     double lastTime = glfwGetTime();
     double lastFrameTime = lastTime;
     int frameCount = 0;
     std::string title = "PG2";
-    static bool vsync = false; // Statická proměnná pro VSync
-    json config = load_config(); // Načtení konfigurace
-    bool antialiasing_enabled;
-    int samples;
-    validate_antialiasing_settings(config, antialiasing_enabled, samples); // Kontrola antialiasing
-    bool isFullscreen = false; // Stav fullscreen režimu
 
     while (!glfwWindowShouldClose(window)) {
-        // Inicializace ImGUI na začátku každého cyklu
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -433,25 +657,109 @@ bool App::run() {
             frameCount = 0;
             lastTime = currentTime;
         }
+
+        // Activate shader and set uniforms
+        shader.activate();
+        shader.setUniform("ambientLight.color", glm::vec3(0.2f)); // Set ambient light
+
+        // Update directional light
+        float sunAngle = currentTime * 0.1f;
+        directionalLight.direction = glm::vec3(sin(sunAngle) * 0.5f, -1.0f, cos(sunAngle) * 0.5f);
+        directionalLight.ambient = glm::vec3(0.7f);
+        directionalLight.diffuse = glm::vec3(0.9f + 0.1f * sin(sunAngle), 0.9f + 0.1f * cos(sunAngle), 0.9f);
+        directionalLight.specular = glm::vec3(1.0f);
+        shader.setUniform("dirLights[0].direction", directionalLight.direction);
+        shader.setUniform("dirLights[0].ambient", directionalLight.ambient);
+        shader.setUniform("dirLights[0].diffuse", directionalLight.diffuse);
+        shader.setUniform("dirLights[0].specular", directionalLight.specular);
+        std::cout << "DirLight dir: " << directionalLight.direction.x << ", " << directionalLight.direction.y << ", " << directionalLight.direction.z << std::endl;
+
+        // Update point lights
+        shader.setUniform("numPointLights", 3);
+        for (int i = 0; i < 3; i++) {
+            float intensity = 0.7f + 0.3f * sin(currentTime * (i + 1));
+            pointLights[i].diffuse = pointLights[i].diffuse * intensity;
+            pointLights[i].specular = pointLights[i].diffuse;
+            std::string index = "[" + std::to_string(i) + "]";
+            shader.setUniform("pointLights" + index + ".position", pointLights[i].position);
+            shader.setUniform("pointLights" + index + ".ambient", pointLights[i].ambient);
+            shader.setUniform("pointLights" + index + ".diffuse", pointLights[i].diffuse);
+            shader.setUniform("pointLights" + index + ".specular", pointLights[i].specular);
+            shader.setUniform("pointLights" + index + ".constant", pointLights[i].constant);
+            shader.setUniform("pointLights" + index + ".linear", pointLights[i].linear);
+            shader.setUniform("pointLights" + index + ".quadratic", pointLights[i].quadratic);
+            std::cout << "PointLight[" << i << "] pos: " << pointLights[i].position.x << ", " << pointLights[i].position.y << ", " << pointLights[i].position.z << std::endl;
+        }
+
+        // Update spotlight
+        shader.setUniform("numSpotLights", 1);
+        spotLight.position = camera.Position;
+        spotLight.direction = camera.Front;
+        shader.setUniform("spotLights[0].position", spotLight.position);
+        shader.setUniform("spotLights[0].direction", spotLight.direction);
+        shader.setUniform("spotLights[0].ambient", spotLight.ambient);
+        shader.setUniform("spotLights[0].diffuse", spotLight.diffuse);
+        shader.setUniform("spotLights[0].specular", spotLight.specular);
+        shader.setUniform("spotLights[0].constant", spotLight.constant);
+        shader.setUniform("spotLights[0].linear", spotLight.linear);
+        shader.setUniform("spotLights[0].quadratic", spotLight.quadratic);
+        shader.setUniform("spotLights[0].cutOff", spotLight.cutOff);
+        shader.setUniform("spotLights[0].outerCutOff", spotLight.outerCutOff);
+        std::cout << "SpotLight pos: " << spotLight.position.x << ", " << spotLight.position.y << ", " << spotLight.position.z << std::endl;
+
+        // Camera movement
         glm::vec3 direction = camera.ProcessKeyboard(window, deltaTime);
         camera.Move(direction, maze_map, 1.0f, heightmap, 20.0f);
         shader.setUniform("uV_m", camera.GetViewMatrix());
         shader.setUniform("viewPos", camera.Position);
-        glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+        std::cout << "Camera pos: " << camera.Position.x << ", " << camera.Position.y << ", " << camera.Position.z << std::endl;
+
+        // Rendering
+        glClearColor(0.3f, 0.3f, 0.4f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+        // Render opaque objects
         for (auto& wall : maze_walls) {
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, wall->meshes[0].texture_id);
-            shader.setUniform("tex0", 0);
-            shader.setUniform("uM_m", wall->getModelMatrix());
-            shader.setUniform("u_diffuse_color", wall->meshes[0].diffuse_material);
-            wall->draw();
+            if (!wall->transparent) {
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, wall->meshes[0].texture_id);
+                shader.setUniform("tex0", 0);
+                shader.setUniform("uM_m", wall->getModelMatrix());
+                // Remove u_diffuse_color as it's not used in tex.frag
+                wall->draw();
+                checkGLError("After drawing wall");
+            }
         }
 
-        std::vector<Model*> transparent_objects;
-        for (auto& bunny : transparent_bunnies) transparent_objects.push_back(bunny);
-        std::sort(transparent_objects.begin(), transparent_objects.end(),
+        // Render models
+        for (auto& model : models) {
+            if (!model->transparent) {
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, model->meshes[0].texture_id);
+                shader.setUniform("tex0", 0);
+                shader.setUniform("uM_m", model->getModelMatrix());
+                model->draw();
+                checkGLError("After drawing model");
+            }
+        }
+
+        // Render transparent objects
+        std::vector<Model*> transparent_draw_list;
+        for (auto& wall : maze_walls) {
+            if (wall->transparent) {
+                transparent_draw_list.push_back(wall);
+            }
+        }
+        for (auto& obj : transparent_objects) {
+            transparent_draw_list.push_back(obj);
+        }
+        for (auto& model : models) {
+            if (model->transparent) {
+                transparent_draw_list.push_back(model);
+            }
+        }
+
+        std::sort(transparent_draw_list.begin(), transparent_draw_list.end(),
             [this](Model* a, Model* b) {
                 float dist_a = glm::distance(camera.Position, a->origin);
                 float dist_b = glm::distance(camera.Position, b->origin);
@@ -460,40 +768,29 @@ bool App::run() {
 
         glEnable(GL_BLEND);
         glDepthMask(GL_FALSE);
-        for (auto* model : transparent_objects) {
+        for (auto* model : transparent_draw_list) {
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, model->meshes[0].texture_id);
             shader.setUniform("tex0", 0);
             shader.setUniform("uM_m", model->getModelMatrix());
-            shader.setUniform("u_diffuse_color", model->meshes[0].diffuse_material);
             model->draw();
+            checkGLError("After drawing transparent model");
         }
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
 
-        // Monitorovací okno pomocí ImGUI
-        ImGui::Begin("Monitoring", nullptr, ImGuiWindowFlags_AlwaysAutoResize);
-        ImGui::Text("Monitoring:");
-        ImGui::Text("FPS: %d", frameCount);
-        ImGui::Text("VSync: %s", vsync ? "ON" : "OFF");
-        ImGui::Text("Antialiasing: %s (Samples: %d)", antialiasing_enabled ? "ON" : "OFF", samples);
-        ImGui::Text("Mode: %s", isFullscreen ? "Fullscreen" : "Windowed");
-
-        // Tlačítko pro přepínání fullscreen/windowed
-        if (ImGui::Button("Toggle Fullscreen (F11)")) {
-            isFullscreen = !isFullscreen;
-            if (isFullscreen) {
-                GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-                const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-                glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
-            }
-            else {
-                glfwSetWindowMonitor(window, nullptr, 100, 100, 800, 600, GLFW_DONT_CARE);
-            }
+        // ImGui rendering
+        if (show_imgui) {
+            ImGui::SetNextWindowPos(ImVec2(10, 10));
+            ImGui::SetNextWindowSize(ImVec2(250, 100));
+            ImGui::Begin("Monitoring", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+            ImGui::Text("V-Sync: %s", vsync ? "ON" : "OFF");
+            ImGui::Text("FPS: %d", frameCount);
+            ImGui::Text("(press RMB to release mouse)");
+            ImGui::Text("(press H to show/hide info)");
+            ImGui::End();
         }
-        ImGui::End();
 
-        // Render ImGUI
         ImGui::Render();
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -560,7 +857,6 @@ void App::toggleFullscreen() {
 
 void App::key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     App* app = static_cast<App*>(glfwGetWindowUserPointer(window));
-    static bool vsync = false;
 
     if (action == GLFW_PRESS || action == GLFW_REPEAT) {
         switch (key) {
@@ -568,9 +864,9 @@ void App::key_callback(GLFWwindow* window, int key, int scancode, int action, in
             glfwSetWindowShouldClose(window, GLFW_TRUE);
             break;
         case GLFW_KEY_F10:
-            vsync = !vsync;
-            glfwSwapInterval(vsync ? 1 : 0);
-            std::cout << "VSync: " << (vsync ? "ON" : "OFF") << std::endl;
+            app->vsync = !app->vsync;
+            glfwSwapInterval(app->vsync ? 1 : 0);
+            std::cout << "VSync: " << (app->vsync ? "ON" : "OFF") << std::endl;
             break;
         case GLFW_KEY_F11:
             app->toggleFullscreen();
@@ -587,7 +883,29 @@ void App::key_callback(GLFWwindow* window, int key, int scancode, int action, in
             app->b += 0.1f;
             if (app->b > 1.0f) app->b = 0.0f;
             break;
+        case GLFW_KEY_H:
+            app->show_imgui = !app->show_imgui;
+            if (app->show_imgui) {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            }
+            else {
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+            }
+            break;
         }
+    }
+}
+
+void App::mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
+    App* app = static_cast<App*>(glfwGetWindowUserPointer(window));
+    if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS) {
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        app->firstMouse = true;
+    }
+    if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_PRESS) {
+        app->fov = app->DEFAULT_FOV;
+        app->update_projection_matrix();
+        std::cout << "Zoom reset to default" << std::endl;
     }
 }
 
@@ -603,15 +921,6 @@ void App::cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
     app->lastX = xpos;
     app->lastY = ypos;
     app->camera.ProcessMouseMovement(static_cast<float>(xoffset), static_cast<float>(yoffset));
-}
-
-void App::mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
-    App* app = static_cast<App*>(glfwGetWindowUserPointer(window));
-    if (button == GLFW_MOUSE_BUTTON_MIDDLE && action == GLFW_PRESS) {
-        app->fov = app->DEFAULT_FOV;
-        app->update_projection_matrix();
-        std::cout << "Zoom reset to default" << std::endl;
-    }
 }
 
 void create_default_config() {

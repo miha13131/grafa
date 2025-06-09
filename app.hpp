@@ -19,76 +19,82 @@
 #include "imgui_impl_opengl3.h"
 
 using json = nlohmann::json;
-
 class App {
 public:
     App();
     ~App();
-    bool init(GLFWwindow* window);
-    void init_assets();
+    bool init();
     bool run();
+    void init_glfw();
 
-    // Texture loading
+private:
+    struct Light {
+        glm::vec3 position;
+        glm::vec3 direction;
+        glm::vec3 ambient;
+        glm::vec3 diffuse;
+        glm::vec3 specular;
+        float constant;
+        float linear;
+        float quadratic;
+        float cutOff;
+        float outerCutOff;
+    };
+
+    GLFWwindow* window = nullptr;
+    ShaderProgram shader;
+    Model* triangle = nullptr;
+    std::vector<Model*> maze_walls;
+    std::vector<Model*> transparent_objects;
+    std::vector<GLuint> transparent_textures;
+    Camera camera;
+    cv::Mat heightmap;
+    cv::Mat maze_map;
+    float maxTerrainHeight = 0.0f;
+    int width = 800;
+    int height = 600;
+    double lastX, lastY;
+    bool firstMouse;
+    float fov{ 60.0f };
+    const float DEFAULT_FOV = 60.0f;
+    glm::mat4 projection_matrix;
+    bool show_imgui = true;
+    bool vsync = false;
+    float r = 0.0f, g = 0.0f, b = 0.0f;
+    Model* terrain;
+    std::vector<Model*> models;
+    std::vector<GLuint> model_textures;
+
+
+    // OpenGL objekty
+    GLuint myTexture = 0;
+    GLuint VAO = 0, VBO = 0;
+    GLuint shaderProgram = 0;
+
+    // Světla
+    Light directionalLight; // Směrové světlo (slunce)
+    std::vector<Light> pointLights; // Bodová světla
+    Light spotLight; // Reflektor
+
+    // Metody
+    void init_assets();
+    void init_triangle();
+    void createTerrainModel();
+    void createMazeModel();
+    void createModels();
+    void createTransparentObjects();
     GLuint textureInit(const std::filesystem::path& filepath);
-    GLuint myTexture; // Proměnná pro texturu je již deklarována
-
-    // Callback methods
+    GLuint gen_tex(cv::Mat& image);
+    cv::Mat loadHeightmap(const std::filesystem::path& filepath);
+    void update_projection_matrix();
     static void fbsize_callback(GLFWwindow* window, int width, int height);
     static void scroll_callback(GLFWwindow* window, double xoffset, double yoffset);
     static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);
-    static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos);
     static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods);
-
-    cv::Mat loadHeightmap(const std::filesystem::path& filepath);
-    void createTerrainModel();
-    std::vector<float> heightmap_data; // vector of heightmap data
-    Model* terrain; // Model for map
+    static void cursor_position_callback(GLFWwindow* window, double xpos, double ypos);
     void toggleFullscreen();
-private:
-    // Shader and model data
-    ShaderProgram shader;
-    Model* triangle{ nullptr };
-    GLuint shaderProgram;
-    GLuint VAO{ 0 }, VBO{ 0 }; // For the simple triangle
-
-    // Maze data
-    cv::Mat maze_map;
-    cv::Mat heightmap;
-    float maxTerrainHeight;
-    std::vector<Model*> maze_walls;
-    std::vector<GLuint> wall_textures;
-
-    // Transparent bunnies (Task 1)
-    std::vector<Model*> transparent_bunnies;
-    void createTransparentBunnies();
-
-    // Maze generation methods
-    void genLabyrinth(cv::Mat& map);
-    uchar getmap(cv::Mat& map, int x, int y);
-    Model* createWall(ShaderProgram& shader, GLuint texture_id, glm::vec3 position, float height, glm::vec3 orientationAxis);
-    Model* createSquareTile(ShaderProgram& shader, GLuint texture_id, glm::vec3 position);
-    void createMazeModel();
-
-    // Window and projection
-    GLFWwindow* window{ nullptr };
-    int width{ 800 }, height{ 600 };
-    float fov{ 60.0f };
-    const float DEFAULT_FOV = 60.0f;
-    glm::mat4 projection_matrix{ glm::identity<glm::mat4>() };
-
-    // Camera
-    Camera camera{ glm::vec3(0.0f, 0.0f, 3.0f) };
-    double lastX{ 400.0 }, lastY{ 300.0 };
-    bool firstMouse{ true };
-
-    // Triangle color
-    float r{ 1.0f }, g{ 0.5f }, b{ 0.2f };
-
-    // Utility methods
-    void update_projection_matrix();
-    GLuint gen_tex(cv::Mat& image);
-    GLuint compileShader(GLenum type, const char* source);
-    void init_triangle();
+    static GLuint compileShader(GLenum type, const char* source);
+    static uchar getmap(cv::Mat& map, int x, int y);
 };
 
 // Configuration loading and validation
