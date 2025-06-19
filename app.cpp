@@ -67,6 +67,7 @@ App::App() : lastX(400.0), lastY(300.0), firstMouse(true), fov(DEFAULT_FOV) {
     }
     std::cout << "Max heightmap value: " << (int)maxValue << " at (" << max_hm_x << ", " << max_hm_z << ")" << std::endl;
 
+
     maxTerrainHeight = maxValue / 255.0f * maxHeight;
     std::cout << "Max terrain height: " << maxTerrainHeight << std::endl;
 
@@ -708,8 +709,8 @@ bool App::run() {
         std::cout << "SpotLight pos: " << spotLight.position.x << ", " << spotLight.position.y << ", " << spotLight.position.z << std::endl;
 
         // Camera movement
-        glm::vec3 direction = camera.ProcessKeyboard(window, deltaTime);
-        camera.Move(direction, maze_map, 1.0f, heightmap, 20.0f);
+        glm::vec3 direction = camera.ProcessKeyboard(window, deltaTime); 
+        camera.Move(direction, maze_map, 1.0f, heightmap, 20.0f, deltaTime);
         shader.setUniform("uV_m", camera.GetViewMatrix());
         shader.setUniform("viewPos", camera.Position);
         std::cout << "Camera pos: " << camera.Position.x << ", " << camera.Position.y << ", " << camera.Position.z << std::endl;

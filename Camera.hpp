@@ -20,8 +20,30 @@ public:
    float Roll{ 0.0f };   // Rotation around Z axis (tilt)  
 
    // Camera parameters  
-   float MovementSpeed{ 2.5f };  
-   float MouseSensitivity{ 0.1f };  
+   float MovementSpeed{ 15.5f };  
+   float MouseSensitivity{ 0.1f };
+   // Jumping and gravity
+   float VerticalVelocity{ 0.0f };
+   bool  OnGround{ true };
+   const float Gravity{ -30.81f };
+   const float JumpSpeed{ 25.0f };
+
+   Camera& operator=(const Camera& other) {
+       if (this != &other) {
+           Position = other.Position;
+           Front = other.Front;
+           Up = other.Up;
+           Right = other.Right;
+           Yaw = other.Yaw;
+           Pitch = other.Pitch;
+           Roll = other.Roll;
+           MovementSpeed = other.MovementSpeed;
+           MouseSensitivity = other.MouseSensitivity;
+           VerticalVelocity = other.VerticalVelocity;
+           OnGround = other.OnGround;
+       }
+       return *this;
+   }
 
    Camera(glm::vec3 position = glm::vec3(0.0f, 0.0f, 3.0f)) : Position(position) {  
        updateCameraVectors();  
@@ -42,12 +64,14 @@ public:
            direction -= Front;  
        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)  
            direction -= Right;  
-       if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)  
-           direction += Right;  
-       if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS)  
-           direction += Up;  
-       if (glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS)  
-           direction -= Up;  
+       if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
+           direction += Right;
+
+       // Jump when space is pressed and the camera is on the ground
+       if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && OnGround) {
+           VerticalVelocity = JumpSpeed;
+           OnGround = false;
+       }
 
        // Normalize direction vector if not zero  
        if (glm::length(direction) > 0.0f)  
@@ -62,13 +86,15 @@ public:
    }  
 
    // Move camera  
-   void Move(const glm::vec3& direction, cv::Mat& maze_map, float speed, cv::Mat& heightmap, float maxHeight) {  
+   void Move(const glm::vec3& direction, cv::Mat& maze_map, float speed, cv::Mat& heightmap, float maxHeight, float deltaTime) {
        float tileSizeGL = 1.0f;  
        int width = heightmap.cols;  
        int height = heightmap.rows;  
 
-       glm::vec3 newPos = Position + direction * speed;  
-       float newX = newPos.x;  
+       glm::vec3 newPos = Position + direction * speed;
+       newPos.y += VerticalVelocity * deltaTime;
+       VerticalVelocity += Gravity * deltaTime;
+       float newX = newPos.x;
        float newZ = newPos.z;  
 
        int hm_x0 = static_cast<int>(newX / (15.0f * tileSizeGL) * (width - 1));  
@@ -93,9 +119,16 @@ public:
 
        if (newPos.y < terrainHeight + 0.5f) {
            newPos.y = terrainHeight + 0.5f; // Offset 0.5 nad terénem
+           if (VerticalVelocity <= 0.0f) {
+               VerticalVelocity = 0.0f;
+               OnGround = true;
+           }
        }
-       Position = newPos;  
-   }  
+       else {
+           OnGround = false;
+       }
+       Position = newPos;
+   }
 
 
 
