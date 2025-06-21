@@ -1,4 +1,6 @@
 ﻿#include "OBJloader.hpp"
+#include <algorithm>
+
 bool loadOBJ(
     const std::string& path,
     std::vector<glm::vec3>& out_vertices,
@@ -44,17 +46,39 @@ bool loadOBJ(
             temp_normals.push_back(normal);
         }
         else if (prefix == "f") {
-            unsigned int vertexIndex[3], uvIndex[3], normalIndex[3];
-            char slash;
-            for (int i = 0; i < 3; i++) {
-                if (!(iss >> vertexIndex[i] >> slash >> uvIndex[i] >> slash >> normalIndex[i])) {
+            std::vector<unsigned int> v_idx, uv_idx, n_idx;
+            std::string token;
+            while (iss >> token) {
+                std::replace(token.begin(), token.end(), '/', ' ');
+                std::istringstream vss(token);
+                unsigned int vi = 0, uvi = 0, ni = 0;
+                if (!(vss >> vi >> uvi >> ni)) {
                     std::cerr << "Invalid face format in OBJ file: " << path << std::endl;
                     file.close();
                     return false;
                 }
-                vertexIndices.push_back(vertexIndex[i] - 1);
-                uvIndices.push_back(uvIndex[i] - 1);
-                normalIndices.push_back(normalIndex[i] - 1);
+                v_idx.push_back(vi - 1);
+                uv_idx.push_back(uvi - 1);
+                n_idx.push_back(ni - 1);
+            }
+
+            if (v_idx.size() < 3) {
+                std::cerr << "Face with less than 3 vertices in OBJ file: " << path << std::endl;
+                continue;
+            }
+
+            for (size_t i = 1; i + 1 < v_idx.size(); ++i) {
+                vertexIndices.push_back(v_idx[0]);
+                vertexIndices.push_back(v_idx[i]);
+                vertexIndices.push_back(v_idx[i + 1]);
+
+                uvIndices.push_back(uv_idx[0]);
+                uvIndices.push_back(uv_idx[i]);
+                uvIndices.push_back(uv_idx[i + 1]);
+
+                normalIndices.push_back(n_idx[0]);
+                normalIndices.push_back(n_idx[i]);
+                normalIndices.push_back(n_idx[i + 1]);
             }
         }
     }
