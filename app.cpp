@@ -44,7 +44,7 @@ bool AABBintersect(const glm::vec3& minA, const glm::vec3& maxA,
 }
 
 App::App() : lastX(400.0), lastY(300.0), firstMouse(true), fov(DEFAULT_FOV) {
-    camera = Camera(glm::vec3(160.0f, 5.0f, 160.0f));
+    camera = Camera(glm::vec3(160.0f, 12.0f, 160.0f));
     // Initialize lights via Lights class
     lights.initAmbientLight(glm::vec3(0.2f));
     lights.initDirectionalLight();
@@ -619,7 +619,16 @@ bool App::run() {
 
         // Camera movement with collision detection
         glm::vec3 direction = camera.ProcessKeyboard(window, deltaTime);
-        glm::vec3 newPos = camera.Position + direction * camera.MovementSpeed * deltaTime;
+        glm::vec3 newPos = camera.Position + direction * deltaTime;
+
+        // Apply gravity and jumping physics
+        camera.VerticalVelocity += camera.Gravity * deltaTime;
+        newPos.y += camera.VerticalVelocity * deltaTime;
+        if (newPos.y <= 12.0f) {
+            newPos.y = 12.0f;
+            camera.VerticalVelocity = 0.0f;
+            camera.OnGround = true;
+        }
         glm::vec3 cameraMin = newPos - glm::vec3(0.5f, 1.0f, 0.5f);
         glm::vec3 cameraMax = newPos + glm::vec3(0.5f, 1.0f, 0.5f);
 

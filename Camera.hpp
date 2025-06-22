@@ -45,7 +45,7 @@ public:
         return *this;
     }
 
-    Camera(glm::vec3 position = glm::vec3(160.0f, 5.0f, 160.0f)) : Position(position) {
+    Camera(glm::vec3 position = glm::vec3(160.0f, 12.0f, 160.0f)) : Position(position) {
         updateCameraVectors();
     }
 
@@ -56,6 +56,7 @@ public:
 
     // Process keyboard input  
     glm::vec3 ProcessKeyboard(GLFWwindow* window, float deltaTime) {
+        (void)deltaTime;
         glm::vec3 direction{ 0.0f };
 
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
@@ -75,6 +76,7 @@ public:
 
         // Normalize direction vector if not zero  
         if (glm::length(direction) > 0.0f)
+
             direction = glm::normalize(direction);
 
         // Check if Shift is pressed for faster movement  
@@ -82,13 +84,13 @@ public:
         if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
             speed *= 2.5f;  // 2.5x faster with Shift  
 
-        return direction * speed * deltaTime;
+        return direction * speed;
     }
 
     // Move camera  
     void Move(const glm::vec3& direction, cv::Mat& maze_map, float speed, float deltaTime) {
         glm::vec3 newPos = Position + direction;
-        newPos.y = 5.0f; // Fixed height above plane
+        newPos.y = 12.0f; // Fixed height above plane
         Position = newPos;
         std::cout << "Camera moved to: (" << Position.x << ", " << Position.y << ", " << Position.z << ")" << std::endl;
     }
