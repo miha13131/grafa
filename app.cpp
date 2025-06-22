@@ -43,7 +43,7 @@ bool AABBintersect(const glm::vec3& minA, const glm::vec3& maxA,
         (minA.z <= maxB.z && maxA.z >= minB.z);
 }
 
-App::App() : lastX(400.0), lastY(300.0), firstMouse(true), fov(DEFAULT_FOV) {
+App::App() : lastX(400.0), lastY(300.0), firstMouse(true), fov(DEFAULT_FOV), vsync(true) {
     camera = Camera(glm::vec3(160.0f, 12.0f, 160.0f));
     // Initialize lights via Lights class
     lights.initAmbientLight(glm::vec3(0.2f));
@@ -92,9 +92,11 @@ App::~App() {
 
 void App::init_glfw() {
     json config = load_config();
-    bool antialiasing_enabled;
-    int samples;
-    validate_antialiasing_settings(config, antialiasing_enabled, samples);
+    bool aa_enabled;
+    int aa_samples;
+    validate_antialiasing_settings(config, aa_enabled, aa_samples);
+    antialiasing_enabled = aa_enabled; // Store in member variable
+    samples = aa_samples;             // Store in member variable
 
     if (!glfwInit()) {
         throw std::runtime_error("GLFW can not be initialized.");
@@ -112,15 +114,21 @@ void App::init_glfw() {
         glfwWindowHint(GLFW_SAMPLES, 0);
     }
 
-    int window_width = config["window"]["width"].get<int>();
-    int window_height = config["window"]["height"].get<int>();
+    // Load window dimensions and position from config
+    windowWidth = config["window"]["width"].get<int>();
+    windowHeight = config["window"]["height"].get<int>();
+    windowPosX = config["window"].value("posX", 100);
+    windowPosY = config["window"].value("posY", 100);
     std::string window_title = config["window"]["title"].get<std::string>();
 
-    window = glfwCreateWindow(window_width, window_height, window_title.c_str(), nullptr, nullptr);
+    window = glfwCreateWindow(windowWidth, windowHeight, window_title.c_str(), nullptr, nullptr);
     if (!window) {
         glfwTerminate();
         throw std::runtime_error("GLFW window can not be created.");
     }
+
+    // Set initial window position
+    glfwSetWindowPos(window, windowPosX, windowPosY);
 
     glfwMakeContextCurrent(window);
     glfwSetWindowUserPointer(window, this);
@@ -129,8 +137,16 @@ void App::init_glfw() {
         throw std::runtime_error("GLEW can not be initialized.");
     }
 
+    // Enable VSync
+    glfwSwapInterval(vsync ? 1 : 0);
+    std::cout << "VSync initialized: " << (vsync ? "ON" : "OFF") << std::endl;
+
     if (antialiasing_enabled) {
         glEnable(GL_MULTISAMPLE);
+        std::cout << "Antialiasing enabled with " << samples << " samples" << std::endl;
+    }
+    else {
+        std::cout << "Antialiasing disabled" << std::endl;
     }
 }
 
@@ -350,9 +366,9 @@ void App::createTransparentObjects() {
 
     // Colors with alpha for transparency
     std::vector<glm::vec4> colors = {
-        glm::vec4(1.0f, 1.0f, 1.0f, 0.8f), // Tree - green
-        glm::vec4(1.0f, 1.0f, 1.0f, 0.6f), // Bunny - red
-        glm::vec4(1.0f, 1.0f, 1.0f, 0.4f)  // House - blue
+        glm::vec4(1.0f, 1.0f, 1.0f, 0.3f), // Tree - green
+        glm::vec4(1.0f, 1.0f, 1.0f, 0.7f), // Bunny - red
+        glm::vec4(1.0f, 1.0f, 1.0f, 0.5f)  // House - blue
     };
 
     // Model paths
@@ -403,8 +419,7 @@ void App::createModels() {
     std::vector<std::string> texturePaths = {
         "resources/textures/krabice.jpg", // Cube
         "resources/textures/Cat.jpg",     // Cat
-        "resources/textures/Tractor.jpg", // Tractor
-        "resources/textures/barrel.png"   // House (Barrel model)
+        "resources/textures/Tractor.jpg"  // Tractor
     };
 
     for (const auto& path : texturePaths) {
@@ -422,44 +437,40 @@ void App::createModels() {
 
     // Positions on flat plane
     std::vector<glm::vec3> positions = {
-        glm::vec3(1.0f * tileSizeGL, 0.5f, 1.0f * tileSizeGL),      // Cube
-        glm::vec3(50.0f * tileSizeGL, 0.01f, 0.0f * tileSizeGL),    // Cat
-        glm::vec3(75.0f * tileSizeGL, 40.0f, 75.0f * tileSizeGL),   // Tractor
-        glm::vec3(75.0f * tileSizeGL, 0.01f, 100.0f * tileSizeGL)   // House (already in transparent_objects)
+        glm::vec3(1.0f * tileSizeGL, 10.0f, 1.0f * tileSizeGL),      // Cube
+        glm::vec3(50.0f * tileSizeGL, 30.0f, 0.0f * tileSizeGL),    // Cat
+        glm::vec3(75.0f * tileSizeGL, 2.0f, 75.0f * tileSizeGL)     // Tractor
     };
 
     // Colors with alpha = 1.0 for opacity
     std::vector<glm::vec4> colors = {
         glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), // Cube
         glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), // Cat
-        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), // Tractor
-        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)  // House
+        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)  // Tractor
     };
 
     // Model paths
     std::vector<std::string> modelPaths = {
-        "resources/models/cube.obj",
+        "resources/models/cube_triangles_vnt.obj",
         "resources/models/cat.obj",
-        "resources/models/Tractor.obj",
-        "resources/models/Barrel_OBJ.obj"
+        "resources/models/Tractor.obj"
     };
 
     // Scales for each model
     std::vector<glm::vec3> scales = {
         glm::vec3(10.0f, 10.0f, 10.0f), // Cube
         glm::vec3(0.3f, 0.3f, 0.3f),    // Cat
-        glm::vec3(0.5f, 0.5f, 0.5f),    // Tractor
-        glm::vec3(10.0f, 10.0f, 10.0f)  // House
+        glm::vec3(0.5f, 0.5f, 0.5f)     // Tractor
     };
 
     // Create models with fixed scale and apply texture
-    for (int i = 0; i < 3; i++) { // Exclude house (index 3), as it's in transparent_objects
+    for (int i = 0; i < 3; i++) {
         Model* model = new Model(modelPaths[i], shader);
         if (i == 1) { // Cat
             model->orientation = glm::vec3(glm::radians(270.0f), 0.0f, 0.0f);
         }
         if (i == 2) { // Tractor
-            model->orientation = glm::vec3(0.0f, glm::radians(30.0f), 0.0f);
+            //model->orientation = glm::vec3(0.0f, glm::radians(0.0f), 0.0f);
         }
         if (!model->meshes.empty()) {
             model->meshes[0].texture_id = model_textures[i];
@@ -615,6 +626,23 @@ bool App::run() {
         lights.spotLights[0].position = camera.Position;
         lights.spotLights[0].direction = camera.Front;
 
+        // Update cube (index 0) position: oscillate vertically, stay above y=5.0f
+        if (!models.empty() && models.size() > 0) {
+            models[0]->origin.y = 6.0f + 5.0f * static_cast<float>(sin(currentTime * 0.5));
+        }
+
+        // Update tractor (index 2) position: move back-and-forth along X-axis
+        if (models.size() > 2) {
+            float tractorSpeed = 1.0f; // Speed of movement
+            float tractorRange = 40.0f;
+            float xPos = 170.0f + tractorRange * sin(currentTime * tractorSpeed);
+            models[2]->origin = glm::vec3(
+                75.0f,    // Fixed
+                40.0f,    // Fixed above ground
+                xPos      // Back-and-forth
+            );
+        }
+
         lights.apply(shader.getID());
 
         // Camera movement with collision detection
@@ -718,9 +746,10 @@ bool App::run() {
 
         if (show_imgui) {
             ImGui::SetNextWindowPos(ImVec2(10, 10));
-            ImGui::SetNextWindowSize(ImVec2(250, 100));
+            ImGui::SetNextWindowSize(ImVec2(250, 120)); // Increased height for MSAA info
             ImGui::Begin("Monitoring", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
             ImGui::Text("V-Sync: %s", vsync ? "ON" : "OFF");
+            ImGui::Text("AA: %s, Samples: %d", antialiasing_enabled ? "ON" : "OFF", samples);
             ImGui::Text("FPS: %d", frameCount);
             ImGui::Text("(press RMB to release mouse)");
             ImGui::Text("(press H to show/hide info)");
@@ -782,12 +811,23 @@ void App::scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
 void App::toggleFullscreen() {
     bool isFullscreen = glfwGetWindowMonitor(window) != nullptr;
     if (isFullscreen) {
-        glfwSetWindowMonitor(window, nullptr, 100, 100, 800, 600, GLFW_DONT_CARE);
+        // Exit fullscreen, restore windowed mode with saved position and size
+        glfwSetWindowMonitor(window, nullptr, windowPosX, windowPosY, windowWidth, windowHeight, GLFW_DONT_CARE);
+        std::cout << "Exiting fullscreen, restoring window at (" << windowPosX << ", " << windowPosY
+            << ") with size " << windowWidth << "x" << windowHeight << std::endl;
     }
     else {
+        // Save current window position and size before entering fullscreen
+        glfwGetWindowPos(window, &windowPosX, &windowPosY);
+        glfwGetWindowSize(window, &windowWidth, &windowHeight);
+        std::cout << "Saving window state: pos (" << windowPosX << ", " << windowPosY
+            << "), size " << windowWidth << "x" << windowHeight << std::endl;
+
+        // Enter fullscreen
         GLFWmonitor* monitor = glfwGetPrimaryMonitor();
         const GLFWvidmode* mode = glfwGetVideoMode(monitor);
         glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+        std::cout << "Entering fullscreen: " << mode->width << "x" << mode->height << std::endl;
     }
 }
 
@@ -864,11 +904,14 @@ void create_default_config() {
     config["window"] = {
         {"width", 800},
         {"height", 600},
+        {"posX", 100},
+        {"posY", 100},
         {"title", "OpenGL Maze Demo"}
     };
     config["graphics"] = {
+        {"vsync", true},
         {"antialiasing", {
-            {"enabled", false},
+            {"enabled", true},
             {"samples", 4}
         }}
     };
@@ -899,11 +942,14 @@ json load_config() {
         default_config["window"] = {
             {"width", 800},
             {"height", 600},
+            {"posX", 100},
+            {"posY", 100},
             {"title", "OpenGL Maze Demo"}
         };
         default_config["graphics"] = {
+            {"vsync", true},
             {"antialiasing", {
-                {"enabled", false},
+                {"enabled", true},
                 {"samples", 4}
             }}
         };
@@ -914,25 +960,24 @@ json load_config() {
 bool validate_antialiasing_settings(const json& config, bool& antialiasing_enabled, int& samples) {
     bool valid = true;
     if (!config.contains("graphics") || !config["graphics"].contains("antialiasing")) {
-        std::cerr << "Warning: Antialiasing settings missing in config." << std::endl;
-        antialiasing_enabled = false;
-        samples = 0;
+        std::cerr << "Warning: Antialiasing settings missing in config. Using defaults (enabled, 4 samples)." << std::endl;
+        antialiasing_enabled = true;
+        samples = 4;
         return false;
     }
     const auto& aa_config = config["graphics"]["antialiasing"];
-    antialiasing_enabled = aa_config.value("enabled", false);
-    samples = aa_config.value("samples", 0);
+    antialiasing_enabled = aa_config.value("enabled", true);
+    samples = aa_config.value("samples", 4);
     if (antialiasing_enabled) {
-        if (samples <= 1) {
-            std::cerr << "Warning: Antialiasing enabled but samples <= 1. Setting to 4." << std::endl;
+        // Restrict samples to 0, 2, 4, 8
+        if (samples != 0 && samples != 2 && samples != 4 && samples != 8) {
+            std::cerr << "Warning: Invalid MSAA sample count (" << samples << "). Setting to 4." << std::endl;
             samples = 4;
             valid = false;
         }
-        else if (samples > 8) {
-            std::cerr << "Warning: Too many antialiasing samples (> 8). Setting to 8." << std::endl;
-            samples = 8;
-            valid = false;
-        }
+    }
+    else {
+        samples = 0;
     }
     return valid;
 }

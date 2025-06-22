@@ -39,13 +39,19 @@ private:
     cv::Mat maze_map;
     int width = 800;
     int height = 600;
+    int windowPosX = 100;
+    int windowPosY = 100;
+    int windowWidth = 800;
+    int windowHeight = 600;
     double lastX, lastY;
     bool firstMouse;
     float fov{ 60.0f };
     const float DEFAULT_FOV = 60.0f;
     glm::mat4 projection_matrix;
     bool show_imgui = true;
-    bool vsync = false;
+    bool vsync = true;
+    bool antialiasing_enabled = true; // New: Store MSAA enabled state
+    int samples = 4;                 // New: Store MSAA sample count
     float r = 0.0f, g = 0.0f, b = 0.0f;
     Model* terrain;
     std::vector<Model*> models;
