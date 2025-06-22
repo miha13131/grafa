@@ -23,7 +23,7 @@ public:
 
     // Transparency flag - ADDED FOR TASK 1
     bool transparent{ false };
-
+    float currentTime{ 0.0f };
     ShaderProgram shader;
 
     // Constructor
@@ -37,4 +37,6 @@ public:
         glm::vec3 const& rotation = glm::vec3(0.0f),
         glm::vec3 const& scale_change = glm::vec3(1.0f));
     void draw(glm::mat4 const& model_matrix);
+    glm::vec3 getMinBounds() const;
+    glm::vec3 getMaxBounds() const;
 };

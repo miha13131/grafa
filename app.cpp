@@ -36,96 +36,22 @@ void checkGLError(const std::string& context) {
     }
 }
 
+bool AABBintersect(const glm::vec3& minA, const glm::vec3& maxA,
+    const glm::vec3& minB, const glm::vec3& maxB) {
+    return (minA.x <= maxB.x && maxA.x >= minB.x) &&
+        (minA.y <= maxB.y && maxA.y >= minB.y) &&
+        (minA.z <= maxB.z && maxA.z >= minB.z);
+}
+
 App::App() : lastX(400.0), lastY(300.0), firstMouse(true), fov(DEFAULT_FOV) {
-    try {
-        heightmap = loadHeightmap("resources/textures/heightmap.png");
-        std::cout << "Heightmap loaded: " << heightmap.cols << "x" << heightmap.rows << std::endl;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Failed to load heightmap in App constructor: " << e.what() << std::endl;
-        heightmap = cv::Mat(15, 15, CV_8U, cv::Scalar(128));
-        std::cout << "Using default heightmap: 15x15" << std::endl;
-    }
-
-    float tileSizeGL = 1.0f;
-    float maxHeight = 20.0f;
-    int width = heightmap.cols;
-    int height = heightmap.rows;
-
-    uchar maxValue = 0;
-    int max_hm_x = 0;
-    int max_hm_z = 0;
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            uchar value = heightmap.at<uchar>(y, x);
-            if (value > maxValue) {
-                maxValue = value;
-                max_hm_x = x;
-                max_hm_z = y;
-            }
-        }
-    }
-    std::cout << "Max heightmap value: " << (int)maxValue << " at (" << max_hm_x << ", " << max_hm_z << ")" << std::endl;
-
-
-    maxTerrainHeight = maxValue / 255.0f * maxHeight;
-    std::cout << "Max terrain height: " << maxTerrainHeight << std::endl;
-
-    float bunnyHeight = heightmap.at<uchar>(200, 200) / 255.0f * maxHeight;
-    camera = Camera(glm::vec3(200.0f * tileSizeGL, bunnyHeight + 5.0f, 195.0f * tileSizeGL));
-
-    // Initialize directional light (sun)
-    directionalLight = Light{
-        glm::vec3(200.0f, 100.0f, 200.0f), // Position (unused for directional)
-        glm::vec3(-0.2f, -1.0f, -0.3f),   // Direction
-        glm::vec3(0.7f),                   // Ambient
-        glm::vec3(0.8f),                   // Diffuse
-        glm::vec3(1.0f),                   // Specular
-        1.0f, 0.0f, 0.0f,                  // Attenuation (unused)
-        0.0f, 0.0f                        // Cutoff (unused)
-    };
-
-    // Initialize point lights
-    pointLights.resize(3);
-    pointLights[0] = Light{ // Near tree - green
-        glm::vec3(110.0f, 30.0f, 110.0f),
-        glm::vec3(0.0f),
-        glm::vec3(0.0f, 0.2f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f),
-        glm::vec3(0.0f, 1.0f, 0.0f),
-        1.0f, 0.001f, 0.00001f, // Reduced attenuation
-        0.0f, 0.0f
-    };
-    pointLights[1] = Light{ // Near bunny - red
-        glm::vec3(210.0f, 30.0f, 210.0f),
-        glm::vec3(0.0f),
-        glm::vec3(0.2f, 0.0f, 0.0f),
-        glm::vec3(1.0f, 0.0f, 0.0f),
-        glm::vec3(1.0f, 0.0f, 0.0f),
-        1.0f, 0.001f, 0.00001f, // Reduced attenuation
-        0.0f, 0.0f
-    };
-    pointLights[2] = Light{ // Near house - blue
-        glm::vec3(310.0f, 30.0f, 310.0f),
-        glm::vec3(0.0f),
-        glm::vec3(0.0f, 0.0f, 0.2f),
-        glm::vec3(0.0f, 0.0f, 1.0f),
-        glm::vec3(0.0f, 0.0f, 1.0f),
-        1.0f, 0.001f, 0.00001f, // Reduced attenuation
-        0.0f, 0.0f
-    };
-
-    // Initialize spotlight (attached to camera)
-    spotLight = Light{
-        camera.Position,
-        camera.Front,
-        glm::vec3(0.1f),                   // Ambient
-        glm::vec3(1.0f),                   // Diffuse
-        glm::vec3(1.0f),                   // Specular
-        1.0f, 0.01f, 0.001f,              // Reduced attenuation
-        cos(glm::radians(20.0f)),          // Wider cutoff
-        cos(glm::radians(25.0f))           // Wider outer cutoff
-    };
+    camera = Camera(glm::vec3(160.0f, 5.0f, 160.0f));
+    // Initialize lights via Lights class
+    lights.initAmbientLight(glm::vec3(0.2f));
+    lights.initDirectionalLight();
+    lights.initPointLight(glm::vec3(100.0f, 30.0f, 50.0f), glm::vec3(0.0f, 1.0f, 0.0f)); // Green, near tree
+    lights.initPointLight(glm::vec3(75.0f, 30.0f, 25.0f), glm::vec3(1.0f, 0.0f, 0.0f));  // Red, near bunny
+    lights.initPointLight(glm::vec3(75.0f, 30.0f, 100.0f), glm::vec3(0.0f, 0.0f, 1.0f)); // Blue, near house
+    lights.initSpotLight(camera.Position, camera.Front); // Camera-attached spotlight
 }
 
 App::~App() {
@@ -160,6 +86,8 @@ App::~App() {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
+    glfwDestroyWindow(window);
+    glfwTerminate();
 }
 
 void App::init_glfw() {
@@ -175,6 +103,7 @@ void App::init_glfw() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 6);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GL_TRUE);
 
     if (antialiasing_enabled) {
         glfwWindowHint(GLFW_SAMPLES, samples);
@@ -222,7 +151,10 @@ bool App::init() {
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
+    glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
 
     glfwGetFramebufferSize(window, &width, &height);
     glViewport(0, 0, width, height);
@@ -294,6 +226,52 @@ void App::init_assets() {
         std::cerr << "Models creation error: " << e.what() << std::endl;
         throw;
     }
+
+    initLights();
+}
+
+void App::initLights() {
+    std::filesystem::path point_lights_path = "resources/lights/point_lights.lights";
+    std::ifstream file_point_light(point_lights_path);
+    if (file_point_light.is_open()) {
+        std::string line;
+        while (std::getline(file_point_light, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream ss(line);
+            float x, y, z, r, g, b;
+            if (!(ss >> x >> y >> z >> r >> g >> b)) {
+                std::cerr << "Invalid point light entry: " << line << std::endl;
+                continue;
+            }
+            lights.initPointLight(glm::vec3(x, y, z), glm::vec3(r, g, b));
+        }
+        file_point_light.close();
+    }
+    else {
+        std::cout << "Using default point lights" << std::endl;
+        // Default point lights already initialized in constructor
+    }
+
+    std::filesystem::path spot_lights_path = "resources/lights/spot_lights.lights";
+    std::ifstream file_spot_light(spot_lights_path);
+    if (file_spot_light.is_open()) {
+        std::string line;
+        while (std::getline(file_spot_light, line)) {
+            if (line.empty() || line[0] == '#') continue;
+            std::istringstream ss(line);
+            float posX, posY, posZ, dirX, dirY, dirZ;
+            if (!(ss >> posX >> posY >> posZ >> dirX >> dirY >> dirZ)) {
+                std::cerr << "Invalid spot light entry: " << line << std::endl;
+                continue;
+            }
+            lights.initSpotLight(glm::vec3(posX, posY, posZ), glm::vec3(dirX, dirY, dirZ));
+        }
+        file_spot_light.close();
+    }
+    else {
+        std::cout << "Using default spotlight" << std::endl;
+        // Default spotlight already initialized in constructor
+    }
 }
 
 void App::init_triangle() {
@@ -341,55 +319,68 @@ void App::createTransparentObjects() {
     transparent_objects.clear();
     transparent_textures.clear();
 
-    // Načtení textury kralik.jpg
-    GLuint objectTexture = textureInit("resources/textures/kralik.jpg");
-    if (objectTexture == 0) {
-        std::cerr << "Failed to load texture kralik.jpg for transparent objects" << std::endl;
-    }
-    else {
-        transparent_textures.push_back(objectTexture);
+    // Load textures
+    std::vector<std::string> texturePaths = {
+        "resources/textures/Green.png",  // For tree
+        "resources/textures/red.jpg",    // For bunny
+        "resources/textures/blue.png"    // For house
+    };
+    std::vector<GLuint> objectTextures;
+
+    for (size_t i = 0; i < texturePaths.size(); ++i) {
+        GLuint texture = textureInit(texturePaths[i]);
+        if (texture == 0) {
+            std::cerr << "Failed to load texture: " << texturePaths[i] << std::endl;
+        }
+        else {
+            objectTextures.push_back(texture);
+            transparent_textures.push_back(texture);
+            std::cout << "Loaded texture: " << texturePaths[i] << std::endl;
+        }
     }
 
-    // Terrain dimensions
-    int width = heightmap.cols;
-    int height = heightmap.rows;
     float tileSizeGL = 1.0f;
-    float maxHeight = 20.0f;
 
-    // Fixed positions for three objects
+    // Positions on flat plane
     std::vector<glm::vec3> positions = {
-        glm::vec3(100.0f * tileSizeGL, heightmap.at<uchar>(100, 100) / 255.0f * maxHeight + 1.0f, 100.0f * tileSizeGL), // Tree
-        glm::vec3(200.0f * tileSizeGL, heightmap.at<uchar>(200, 200) / 255.0f * maxHeight + 2.0f, 200.0f * tileSizeGL), // Bunny
-        glm::vec3(300.0f * tileSizeGL, heightmap.at<uchar>(300, 300) / 255.0f * maxHeight + 1.0f, 300.0f * tileSizeGL)  // House
+        glm::vec3(100.0f * tileSizeGL, 0.01f, 50.0f * tileSizeGL),  // Tree
+        glm::vec3(75.0f * tileSizeGL, 2.0f, 25.0f * tileSizeGL),    // Bunny
+        glm::vec3(75.0f * tileSizeGL, 0.01f, 100.0f * tileSizeGL)   // House
     };
 
     // Colors with alpha for transparency
     std::vector<glm::vec4> colors = {
-        glm::vec4(0.3f, 1.0f, 0.3f, 0.8f), // Tree - zelený
-        glm::vec4(1.0f, 0.3f, 0.3f, 0.6f), // Bunny - červený
-        glm::vec4(0.3f, 0.3f, 1.0f, 0.4f)  // House - modrý
+        glm::vec4(1.0f, 1.0f, 1.0f, 0.8f), // Tree - green
+        glm::vec4(1.0f, 1.0f, 1.0f, 0.6f), // Bunny - red
+        glm::vec4(1.0f, 1.0f, 1.0f, 0.4f)  // House - blue
     };
 
     // Model paths
     std::vector<std::string> modelPaths = {
         "resources/models/tree.obj",
         "resources/models/bunny_tri_vnt.obj",
-        "resources/models/house.obj"
+        "resources/models/Barrel_OBJ.obj"
     };
 
     // Scales for each object
     std::vector<glm::vec3> scales = {
-        glm::vec3(1.0f, 1.0f, 1.0f), // Tree
-        glm::vec3(1.0f, 1.0f, 1.0f), // Bunny
-        glm::vec3(1.0f, 1.0f, 1.0f)  // House
+        glm::vec3(5.0f, 5.0f, 5.0f),   // Tree
+        glm::vec3(4.0f, 4.0f, 4.0f),   // Bunny
+        glm::vec3(10.0f, 10.0f, 10.0f) // House
     };
 
     // Create models with fixed scale and apply texture
     for (int i = 0; i < 3; i++) {
         Model* model = new Model(modelPaths[i], shader);
-        if (!model->meshes.empty()) {
-            model->meshes[0].texture_id = objectTexture; // Použití textury
+        if (!model->meshes.empty() && i < objectTextures.size()) {
+            model->meshes[0].texture_id = objectTextures[i];
             model->meshes[0].diffuse_material = colors[i];
+        }
+        else {
+            std::cerr << "Warning: No texture assigned to model " << modelPaths[i] << std::endl;
+            if (!model->meshes.empty()) {
+                model->meshes[0].diffuse_material = colors[i];
+            }
         }
         model->origin = positions[i];
         model->scale = scales[i];
@@ -408,17 +399,18 @@ void App::createModels() {
     models.clear();
     model_textures.clear();
 
-    // Načtení textur
+    // Load textures
     std::vector<std::string> texturePaths = {
-        "resources/textures/krabice.jpg", // Pro krychli
-        "resources/textures/Cat.jpg",     // Pro kočku
-        "resources/textures/Tractor.jpg"  // Pro traktor
+        "resources/textures/krabice.jpg", // Cube
+        "resources/textures/Cat.jpg",     // Cat
+        "resources/textures/Tractor.jpg", // Tractor
+        "resources/textures/barrel.png"   // House (Barrel model)
     };
 
     for (const auto& path : texturePaths) {
         GLuint modelTexture = textureInit(path);
         if (modelTexture == 0) {
-            std::cerr << "Failed to load texture " << path << " for models" << std::endl;
+            std::cerr << "Failed to load texture " << path << std::endl;
         }
         else {
             model_textures.push_back(modelTexture);
@@ -426,56 +418,56 @@ void App::createModels() {
         }
     }
 
-    // Terrain dimensions
-    int width = heightmap.cols;
-    int height = heightmap.rows;
     float tileSizeGL = 1.0f;
-    float maxHeight = 20.0f;
 
-    // Fixed positions for three models, all at x = 150, varying z
+    // Positions on flat plane
     std::vector<glm::vec3> positions = {
-        glm::vec3(150.0f * tileSizeGL, heightmap.at<uchar>(150, 150) / 255.0f * maxHeight + 1.0f, 150.0f * tileSizeGL), // Cube
-        glm::vec3(150.0f * tileSizeGL, heightmap.at<uchar>(150, 160) / 255.0f * maxHeight + 1.0f, 160.0f * tileSizeGL), // Cat
-        glm::vec3(150.0f * tileSizeGL, heightmap.at<uchar>(150, 170) / 255.0f * maxHeight + 1.0f, 170.0f * tileSizeGL)  // Tractor
+        glm::vec3(1.0f * tileSizeGL, 0.5f, 1.0f * tileSizeGL),      // Cube
+        glm::vec3(50.0f * tileSizeGL, 0.01f, 0.0f * tileSizeGL),    // Cat
+        glm::vec3(75.0f * tileSizeGL, 40.0f, 75.0f * tileSizeGL),   // Tractor
+        glm::vec3(75.0f * tileSizeGL, 0.01f, 100.0f * tileSizeGL)   // House (already in transparent_objects)
     };
 
-    // Colors with alpha = 1.0 for opacity, neutral for all to use only texture
+    // Colors with alpha = 1.0 for opacity
     std::vector<glm::vec4> colors = {
-        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), // Cube - neutrální barva, pouze textura
-        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), // Cat - neutrální barva, pouze textura
-        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)  // Tractor - neutrální barva, pouze textura
+        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), // Cube
+        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), // Cat
+        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f), // Tractor
+        glm::vec4(1.0f, 1.0f, 1.0f, 1.0f)  // House
     };
 
     // Model paths
     std::vector<std::string> modelPaths = {
         "resources/models/cube.obj",
         "resources/models/cat.obj",
-        "resources/models/Tractor.obj"
+        "resources/models/Tractor.obj",
+        "resources/models/Barrel_OBJ.obj"
     };
 
-    // Scales for each model, smaller for cat and tractor
+    // Scales for each model
     std::vector<glm::vec3> scales = {
-        glm::vec3(1.0f, 1.0f, 1.0f),  // Cube
-        glm::vec3(0.5f, 0.5f, 0.5f),  // Cat - zmenšen na polovinu
-        glm::vec3(0.7f, 0.7f, 0.7f)   // Tractor - zmenšen na 70%
+        glm::vec3(10.0f, 10.0f, 10.0f), // Cube
+        glm::vec3(0.3f, 0.3f, 0.3f),    // Cat
+        glm::vec3(0.5f, 0.5f, 0.5f),    // Tractor
+        glm::vec3(10.0f, 10.0f, 10.0f)  // House
     };
 
     // Create models with fixed scale and apply texture
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 3; i++) { // Exclude house (index 3), as it's in transparent_objects
         Model* model = new Model(modelPaths[i], shader);
+        if (i == 1) { // Cat
+            model->orientation = glm::vec3(glm::radians(270.0f), 0.0f, 0.0f);
+        }
+        if (i == 2) { // Tractor
+            model->orientation = glm::vec3(0.0f, glm::radians(30.0f), 0.0f);
+        }
         if (!model->meshes.empty()) {
-            model->meshes[0].texture_id = model_textures[i]; // Použití odpovídající textury
+            model->meshes[0].texture_id = model_textures[i];
             model->meshes[0].diffuse_material = colors[i];
         }
         model->origin = positions[i];
         model->scale = scales[i];
-        model->transparent = false; // Neprůhledné modely
-
-        // Převrátit kočku kolem osy y (rotace o 180 stupňů)
-        if (i == 1) { // Cat je druhý model (index 1)
-            model->orientation = glm::vec3(0.0f, glm::radians(180.0f), 0.0f);
-        }
-
+        model->transparent = false;
         models.push_back(model);
         std::cout << "Placed model " << i << " at position ("
             << positions[i].x << ", " << positions[i].y << ", " << positions[i].z << ")\n";
@@ -483,33 +475,12 @@ void App::createModels() {
 }
 
 GLuint App::textureInit(const std::filesystem::path& filepath) {
-    GLuint textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
-    checkGLError("After glBindTexture in textureInit");
-
-    cv::Mat image = cv::imread(filepath.string(), cv::IMREAD_COLOR);
+    cv::Mat image = cv::imread(filepath.string(), cv::IMREAD_UNCHANGED);
     if (image.empty()) {
         std::cerr << "Failed to load texture: " << filepath << std::endl;
-        glBindTexture(GL_TEXTURE_2D, 0);
-        glDeleteTextures(1, &textureID);
         return 0;
     }
-
-    cv::cvtColor(image, image, cv::COLOR_BGR2RGB);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image.cols, image.rows, 0, GL_RGB, GL_UNSIGNED_BYTE, image.data);
-    checkGLError("After glTexImage2D in textureInit");
-
-    glGenerateMipmap(GL_TEXTURE_2D);
-    checkGLError("After glGenerateMipmap in textureInit");
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-    glBindTexture(GL_TEXTURE_2D, 0);
+    GLuint textureID = gen_tex(image);
     return textureID;
 }
 
@@ -536,85 +507,23 @@ GLuint App::gen_tex(cv::Mat& image) {
     return ID;
 }
 
-cv::Mat App::loadHeightmap(const std::filesystem::path& filepath) {
-    std::cout << "Loading heightmap: " << filepath << std::endl;
-    cv::Mat heightmap = cv::imread(filepath.string(), cv::IMREAD_GRAYSCALE);
-    if (heightmap.empty()) {
-        throw std::runtime_error("Failed to load heightmap from file: " + filepath.string());
-    }
-    return heightmap;
-}
-
 void App::createTerrainModel() {
-    if (heightmap.empty()) {
-        throw std::runtime_error("Heightmap is empty in createTerrainModel");
-    }
-    int width = heightmap.cols;
-    int height = heightmap.rows;
-    float tileSizeGL = 1.0f;
-    float maxHeight = 20.0f;
-
     GLuint terrainTexture = textureInit("resources/textures/grass.png");
-
-    std::vector<vertex> vertices;
-    std::vector<GLuint> indices;
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            float heightValue = heightmap.at<uchar>(y, x) / 255.0f * maxHeight;
-            glm::vec3 position(x * tileSizeGL, heightValue, y * tileSizeGL);
-            glm::vec2 texCoord(static_cast<float>(x) / (width - 1), static_cast<float>(y) / (height - 1));
-            glm::vec3 normal(0.0f, 1.0f, 0.0f);
-            vertices.push_back(vertex{ position, texCoord, normal });
-        }
+    terrain = new Model("resources/models/plane_tri_vnt.obj", shader);
+    if (!terrain->meshes.empty()) {
+        terrain->meshes[0].texture_id = terrainTexture;
+        terrain->meshes[0].diffuse_material = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
     }
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            int idx = y * width + x;
-            float hL = (x > 0) ? heightmap.at<uchar>(y, x - 1) / 255.0f * maxHeight : heightmap.at<uchar>(y, x) / 255.0f * maxHeight;
-            float hR = (x < width - 1) ? heightmap.at<uchar>(y, x + 1) / 255.0f * maxHeight : heightmap.at<uchar>(y, x) / 255.0f * maxHeight;
-            float hU = (y > 0) ? heightmap.at<uchar>(y - 1, x) / 255.0f * maxHeight : heightmap.at<uchar>(y, x) / 255.0f * maxHeight;
-            float hD = (y < height - 1) ? heightmap.at<uchar>(y + 1, x) / 255.0f * maxHeight : heightmap.at<uchar>(y, x) / 255.0f * maxHeight;
-            glm::vec3 normal = glm::normalize(glm::vec3(hL - hR, 2.0f, hU - hD));
-            vertices[idx].normal = normal;
-        }
-    }
-
-    for (int y = 0; y < height - 1; ++y) {
-        for (int x = 0; x < width - 1; ++x) {
-            int topLeft = y * width + x;
-            int topRight = topLeft + 1;
-            int bottomLeft = (y + 1) * width + x;
-            int bottomRight = bottomLeft + 1;
-
-            indices.push_back(topLeft);
-            indices.push_back(bottomLeft);
-            indices.push_back(topRight);
-
-            indices.push_back(topRight);
-            indices.push_back(bottomLeft);
-            indices.push_back(bottomRight);
-        }
-    }
-
-    terrain = new Model("", shader);
-    Mesh mesh(GL_TRIANGLES, shader, vertices, indices, glm::vec3(0.0f), glm::vec3(0.0f));
-    mesh.texture_id = terrainTexture;
-    mesh.diffuse_material = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
-    terrain->meshes.push_back(mesh);
-    terrain->origin = glm::vec3(0.0f);
-    terrain->scale = glm::vec3(1.0f);
+    terrain->origin = glm::vec3(0.0f, 0.0f, 0.0f);
+    terrain->scale = glm::vec3(400.0f, 1.0f, 400.0f);
     terrain->orientation = glm::vec3(0.0f);
-
     maze_walls.push_back(terrain);
 }
 
 void App::createMazeModel() {
     createTerrainModel();
-
-    const int width = 15;
-    const int height = 15;
+    const int width = 400;
+    const int height = 400;
     maze_map = cv::Mat(height, width, CV_8U, cv::Scalar('.'));
 }
 
@@ -653,86 +562,105 @@ bool App::run() {
         frameCount++;
 
         if (currentTime - lastTime >= 1.0) {
-            std::string fpsTitle = title + " | FPS: " + std::to_string(frameCount);
+            std::string fpsTitle = title + " | FPS: " + std::to_string(frameCount) + ", VSYNC: " + (vsync ? "ON" : "OFF");
             glfwSetWindowTitle(window, fpsTitle.c_str());
             frameCount = 0;
             lastTime = currentTime;
         }
 
-        // Activate shader and set uniforms
         shader.activate();
-        shader.setUniform("ambientLight.color", glm::vec3(0.2f)); // Set ambient light
+        // Update lights (day/night cycle and movement)
+        float sunAngle = currentTime * 0.3f;
+        float daylight = glm::clamp(sin(sunAngle), 0.0f, 1.0f);
+        float smoothDay = daylight * daylight;
 
-        // Update directional light
-        float sunAngle = currentTime * 0.1f;
-        directionalLight.direction = glm::vec3(sin(sunAngle) * 0.5f, -1.0f, cos(sunAngle) * 0.5f);
-        directionalLight.ambient = glm::vec3(0.7f);
-        directionalLight.diffuse = glm::vec3(0.9f + 0.1f * sin(sunAngle), 0.9f + 0.1f * cos(sunAngle), 0.9f);
-        directionalLight.specular = glm::vec3(1.0f);
-        shader.setUniform("dirLights[0].direction", directionalLight.direction);
-        shader.setUniform("dirLights[0].ambient", directionalLight.ambient);
-        shader.setUniform("dirLights[0].diffuse", directionalLight.diffuse);
-        shader.setUniform("dirLights[0].specular", directionalLight.specular);
-        std::cout << "DirLight dir: " << directionalLight.direction.x << ", " << directionalLight.direction.y << ", " << directionalLight.direction.z << std::endl;
+        lights.ambientLight.color = glm::vec3(0.2f, 0.2f, 0.25f) + glm::vec3(0.5f, 0.5f, 0.4f) * smoothDay;
+        lights.sun.direction = glm::normalize(glm::vec3(cos(sunAngle), -0.5f, sin(sunAngle)));
+        lights.sun.ambient = glm::vec3(0.2f) + glm::vec3(0.1f) * smoothDay;
+        lights.sun.diffuse = glm::vec3(0.5f) + glm::vec3(0.3f) * smoothDay;
+        lights.sun.specular = glm::vec3(1.0f);
 
-        // Update point lights
-        shader.setUniform("numPointLights", 3);
-        for (int i = 0; i < 3; i++) {
-            float intensity = 0.7f + 0.3f * sin(currentTime * (i + 1));
-            pointLights[i].diffuse = pointLights[i].diffuse * intensity;
-            pointLights[i].specular = pointLights[i].diffuse;
-            std::string index = "[" + std::to_string(i) + "]";
-            shader.setUniform("pointLights" + index + ".position", pointLights[i].position);
-            shader.setUniform("pointLights" + index + ".ambient", pointLights[i].ambient);
-            shader.setUniform("pointLights" + index + ".diffuse", pointLights[i].diffuse);
-            shader.setUniform("pointLights" + index + ".specular", pointLights[i].specular);
-            shader.setUniform("pointLights" + index + ".constant", pointLights[i].constant);
-            shader.setUniform("pointLights" + index + ".linear", pointLights[i].linear);
-            shader.setUniform("pointLights" + index + ".quadratic", pointLights[i].quadratic);
-            std::cout << "PointLight[" << i << "] pos: " << pointLights[i].position.x << ", " << pointLights[i].position.y << ", " << pointLights[i].position.z << std::endl;
+        // Move point light[0] (green, near tree): Circular with vertical oscillation
+        lights.pointLights[0].position = glm::vec3(
+            100.0f + 10.0f * sin(currentTime),      // Circular in X
+            30.0f + 5.0f * cos(currentTime * 0.5f), // Oscillate in Y
+            50.0f + 10.0f * cos(currentTime)        // Circular in Z
+        );
+        float intensity0 = 0.7f + 0.3f * sin(currentTime);
+        lights.pointLights[0].diffuse = glm::vec3(0.0f, 1.0f, 0.0f) * intensity0;
+        lights.pointLights[0].specular = lights.pointLights[0].diffuse;
+
+        // Move point light[1] (red, near bunny): Elliptical in XZ plane
+        lights.pointLights[1].position = glm::vec3(
+            75.0f + 12.0f * cos(currentTime * 0.4f), // Elliptical in X
+            30.0f,                                   // Fixed height
+            25.0f + 8.0f * sin(currentTime * 0.4f)   // Elliptical in Z
+        );
+        float intensity1 = 0.7f + 0.3f * cos(currentTime * 0.4f);
+        lights.pointLights[1].diffuse = glm::vec3(1.0f, 0.0f, 0.0f) * intensity1;
+        lights.pointLights[1].specular = lights.pointLights[1].diffuse;
+
+        // Move point light[2] (blue, near house): Spiral upward/downward
+        float spiralHeight = 30.0f + 10.0f * sin(currentTime * 0.3f);
+        lights.pointLights[2].position = glm::vec3(
+            75.0f + 10.0f * cos(currentTime * 0.6f), // Circular in X
+            spiralHeight,                            // Spiral in Y
+            100.0f + 10.0f * sin(currentTime * 0.6f) // Circular in Z
+        );
+        float intensity2 = 0.7f + 0.3f * sin(currentTime * 0.6f);
+        lights.pointLights[2].diffuse = glm::vec3(0.0f, 0.0f, 1.0f) * intensity2;
+        lights.pointLights[2].specular = lights.pointLights[2].diffuse;
+
+        // Update spotlight (camera-attached)
+        lights.spotLights[0].position = camera.Position;
+        lights.spotLights[0].direction = camera.Front;
+
+        lights.apply(shader.getID());
+
+        // Camera movement with collision detection
+        glm::vec3 direction = camera.ProcessKeyboard(window, deltaTime);
+        glm::vec3 newPos = camera.Position + direction * camera.MovementSpeed * deltaTime;
+        glm::vec3 cameraMin = newPos - glm::vec3(0.5f, 1.0f, 0.5f);
+        glm::vec3 cameraMax = newPos + glm::vec3(0.5f, 1.0f, 0.5f);
+
+        bool collision = false;
+        for (const auto* model : models) {
+            if (AABBintersect(cameraMin, cameraMax, model->getMinBounds(), model->getMaxBounds())) {
+                collision = true;
+                break;
+            }
+        }
+        for (const auto* model : transparent_objects) {
+            if (AABBintersect(cameraMin, cameraMax, model->getMinBounds(), model->getMaxBounds())) {
+                collision = true;
+                break;
+            }
+        }
+        if (!collision) {
+            camera.Position = newPos;
         }
 
-        // Update spotlight
-        shader.setUniform("numSpotLights", 1);
-        spotLight.position = camera.Position;
-        spotLight.direction = camera.Front;
-        shader.setUniform("spotLights[0].position", spotLight.position);
-        shader.setUniform("spotLights[0].direction", spotLight.direction);
-        shader.setUniform("spotLights[0].ambient", spotLight.ambient);
-        shader.setUniform("spotLights[0].diffuse", spotLight.diffuse);
-        shader.setUniform("spotLights[0].specular", spotLight.specular);
-        shader.setUniform("spotLights[0].constant", spotLight.constant);
-        shader.setUniform("spotLights[0].linear", spotLight.linear);
-        shader.setUniform("spotLights[0].quadratic", spotLight.quadratic);
-        shader.setUniform("spotLights[0].cutOff", spotLight.cutOff);
-        shader.setUniform("spotLights[0].outerCutOff", spotLight.outerCutOff);
-        std::cout << "SpotLight pos: " << spotLight.position.x << ", " << spotLight.position.y << ", " << spotLight.position.z << std::endl;
-
-        // Camera movement
-        glm::vec3 direction = camera.ProcessKeyboard(window, deltaTime); 
-        camera.Move(direction, maze_map, 1.0f, heightmap, 20.0f, deltaTime);
         shader.setUniform("uV_m", camera.GetViewMatrix());
         shader.setUniform("viewPos", camera.Position);
-        std::cout << "Camera pos: " << camera.Position.x << ", " << camera.Position.y << ", " << camera.Position.z << std::endl;
 
-        // Rendering
+        for (auto& model : models) {
+            model->update(deltaTime);
+        }
+
         glClearColor(0.3f, 0.3f, 0.4f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Render opaque objects
         for (auto& wall : maze_walls) {
             if (!wall->transparent) {
                 glActiveTexture(GL_TEXTURE0);
                 glBindTexture(GL_TEXTURE_2D, wall->meshes[0].texture_id);
                 shader.setUniform("tex0", 0);
                 shader.setUniform("uM_m", wall->getModelMatrix());
-                // Remove u_diffuse_color as it's not used in tex.frag
                 wall->draw();
                 checkGLError("After drawing wall");
             }
         }
 
-        // Render models
         for (auto& model : models) {
             if (!model->transparent) {
                 glActiveTexture(GL_TEXTURE0);
@@ -744,7 +672,6 @@ bool App::run() {
             }
         }
 
-        // Render transparent objects
         std::vector<Model*> transparent_draw_list;
         for (auto& wall : maze_walls) {
             if (wall->transparent) {
@@ -780,7 +707,6 @@ bool App::run() {
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);
 
-        // ImGui rendering
         if (show_imgui) {
             ImGui::SetNextWindowPos(ImVec2(10, 10));
             ImGui::SetNextWindowSize(ImVec2(250, 100));

@@ -1,18 +1,19 @@
 ﻿#include "Model.hpp"
 #include "OBJloader.hpp"
 #include <stdexcept>
+#include <algorithm> // For std::min and std::max
+#undef min
+#undef max
 
 Model::Model(const std::filesystem::path& filename, ShaderProgram shader) {
     this->shader = shader;
     this->name = filename.stem().string();
-    local_model_matrix = glm::mat4(1.0f); // Inicializace transformační matice
+    local_model_matrix = glm::mat4(1.0f);
 
-    // Pokud je název souboru prázdný, přeskoč načítání .obj souboru
     if (filename.empty() || filename.string().empty()) {
-        return; // Nebo nastavte výchozí hodnoty pro meshes, pokud je potřeba
+        return;
     }
 
-    // Load OBJ file
     std::vector<glm::vec3> vertices;
     std::vector<glm::vec2> uvs;
     std::vector<glm::vec3> normals;
@@ -21,44 +22,43 @@ Model::Model(const std::filesystem::path& filename, ShaderProgram shader) {
         throw std::runtime_error("Failed to load OBJ file: " + filename.string());
     }
 
-    // Convert loaded data into our vertex structure format
     std::vector<vertex> mesh_vertices;
     for (size_t i = 0; i < vertices.size(); i++) {
         vertex v;
         v.position = vertices[i];
-        if (i < uvs.size()) {
-            v.texCoord = uvs[i];
-        }
-        else {
-            v.texCoord = glm::vec2(0.0f);
-        }
-        if (i < normals.size()) {
-            v.normal = normals[i];
-        }
-        else {
-            v.normal = glm::vec3(0.0f, 0.0f, 1.0f);
-        }
+        v.texCoord = i < uvs.size() ? uvs[i] : glm::vec2(0.0f);
+        v.normal = i < normals.size() ? normals[i] : glm::vec3(0.0f, 0.0f, 1.0f);
         mesh_vertices.push_back(v);
     }
 
-    // Create indices - simple sequential indexing
     std::vector<GLuint> indices;
     for (GLuint i = 0; i < mesh_vertices.size(); i++) {
         indices.push_back(i);
     }
 
-    // Create mesh
     Mesh mesh(GL_TRIANGLES, shader, mesh_vertices, indices, glm::vec3(0.0f), glm::vec3(0.0f));
     meshes.push_back(mesh);
 }
 
 void Model::update(const float delta_t) {
-    // Here you can implement automatic animations
-    // Example: orientation.y += 1.0f * delta_t; // rotation around Y axis
+    currentTime += delta_t; // Update current time
+    float amplitude = 5.0f; // Adjust amplitude for movement range
+    float speed = 1.0f;    // Adjust speed of movement
+
+    if (name == "cube") {
+        // Up-down movement (sine wave along Y-axis)
+        orientation.y += 1.0f * delta_t; // Keep rotation
+        origin.y = amplitude * sin(speed * currentTime);
+    }
+    else if (name == "sphere_tri_vnt") {
+        // Left-right and back movement (cosine wave along X-axis, sine along Z)
+        orientation.y += 1.0f * delta_t; // Keep rotation
+        origin.x = amplitude * cos(speed * currentTime);
+        origin.z = amplitude * sin(speed * currentTime);
+    }
 }
 
 glm::mat4 Model::getModelMatrix() const {
-    // Compute the complete transformation matrix
     glm::mat4 t = glm::translate(glm::mat4(1.0f), origin);
     glm::mat4 rx = glm::rotate(glm::mat4(1.0f), orientation.x, glm::vec3(1.0f, 0.0f, 0.0f));
     glm::mat4 ry = glm::rotate(glm::mat4(1.0f), orientation.y, glm::vec3(0.0f, 1.0f, 0.0f));
@@ -69,10 +69,7 @@ glm::mat4 Model::getModelMatrix() const {
 }
 
 void Model::draw(glm::vec3 const& offset, glm::vec3 const& rotation, glm::vec3 const& scale_change) {
-    // Activate shader
     shader.activate();
-
-    // Draw all meshes
     for (auto& mesh : meshes) {
         mesh.draw();
     }
@@ -85,3 +82,26 @@ void Model::draw(glm::mat4 const& model_matrix) {
     }
 }
 
+glm::vec3 Model::getMinBounds() const {
+    glm::vec3 minBounds(FLT_MAX);
+    for (const auto& mesh : meshes) {
+        for (const auto& v : mesh.vertices) {
+            minBounds.x = std::min(minBounds.x, v.position.x);
+            minBounds.y = std::min(minBounds.y, v.position.y);
+            minBounds.z = std::min(minBounds.z, v.position.z);
+        }
+    }
+    return minBounds * scale + origin;
+}
+
+glm::vec3 Model::getMaxBounds() const {
+    glm::vec3 maxBounds(-FLT_MAX);
+    for (const auto& mesh : meshes) {
+        for (const auto& v : mesh.vertices) {
+            maxBounds.x = std::max(maxBounds.x, v.position.x);
+            maxBounds.y = std::max(maxBounds.y, v.position.y);
+            maxBounds.z = std::max(maxBounds.z, v.position.z);
+        }
+    }
+    return maxBounds * scale + origin;
+}
