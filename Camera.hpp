@@ -58,11 +58,12 @@ public:
     glm::vec3 ProcessKeyboard(GLFWwindow* window, float deltaTime) {
         (void)deltaTime;
         glm::vec3 direction{ 0.0f };
+        glm::vec3 flatFront = glm::normalize(glm::vec3(Front.x, 0.0f, Front.z));
 
         if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-            direction += Front;
+            direction += flatFront;
         if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-            direction -= Front;
+            direction -= flatFront;
         if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
             direction -= Right;
         if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)

@@ -1,7 +1,9 @@
 ﻿#include "Model.hpp"
 #include "OBJloader.hpp"
 #include <stdexcept>
-#include <algorithm> // For std::min and std::max
+#include <algorithm> 
+#include <cfloat>
+
 #undef min
 #undef max
 
@@ -84,24 +86,28 @@ void Model::draw(glm::mat4 const& model_matrix) {
 
 glm::vec3 Model::getMinBounds() const {
     glm::vec3 minBounds(FLT_MAX);
+    glm::mat4 modelMatrix = getModelMatrix();
     for (const auto& mesh : meshes) {
         for (const auto& v : mesh.vertices) {
-            minBounds.x = std::min(minBounds.x, v.position.x);
-            minBounds.y = std::min(minBounds.y, v.position.y);
-            minBounds.z = std::min(minBounds.z, v.position.z);
+            glm::vec4 transformed = modelMatrix * glm::vec4(v.position, 1.0f);
+            minBounds.x = std::min(minBounds.x, transformed.x);
+            minBounds.y = std::min(minBounds.y, transformed.y);
+            minBounds.z = std::min(minBounds.z, transformed.z);
         }
     }
-    return minBounds * scale + origin;
+    return minBounds;
 }
 
 glm::vec3 Model::getMaxBounds() const {
     glm::vec3 maxBounds(-FLT_MAX);
+    glm::mat4 modelMatrix = getModelMatrix();
     for (const auto& mesh : meshes) {
         for (const auto& v : mesh.vertices) {
-            maxBounds.x = std::max(maxBounds.x, v.position.x);
-            maxBounds.y = std::max(maxBounds.y, v.position.y);
-            maxBounds.z = std::max(maxBounds.z, v.position.z);
+            glm::vec4 transformed = modelMatrix * glm::vec4(v.position, 1.0f);
+            maxBounds.x = std::max(maxBounds.x, transformed.x);
+            maxBounds.y = std::max(maxBounds.y, transformed.y);
+            maxBounds.z = std::max(maxBounds.z, transformed.z);
         }
     }
-    return maxBounds * scale + origin;
+    return maxBounds;
 }
