@@ -204,12 +204,23 @@ void App::init_assets() {
     }
 
     try {
-        std::cout << "Loading shaders..." << std::endl;
+        std::cout << "Loading main shader..." << std::endl;
         shader = ShaderProgram("resources/shaders/tex.vert", "resources/shaders/tex.frag");
-        std::cout << "Shaders loaded successfully" << std::endl;
+        std::cout << "Main shaders loaded successfully" << std::endl;
     }
     catch (const std::exception& e) {
         std::cerr << "Shader loading error: " << e.what() << std::endl;
+        throw;
+    }
+
+    try {
+        std::cout << "Loading particle shader..." << std::endl;
+        ShaderProgram particleShader("resources/shaders/particle.vert", "resources/shaders/particle.frag");
+        particleSystem.initialize(particleShader.getID());
+        std::cout << "Particle shader loaded successfully" << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Particle shader loading error: " << e.what() << std::endl;
         throw;
     }
 
@@ -222,7 +233,15 @@ void App::init_assets() {
         std::cerr << "Terrain creation error: " << e.what() << std::endl;
         throw;
     }
-
+    try {
+        std::cout << "Creating models..." << std::endl;
+        createModels();
+        std::cout << "Models created successfully" << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Models creation error: " << e.what() << std::endl;
+        throw;
+    }
     try {
         std::cout << "Creating transparent objects..." << std::endl;
         createTransparentObjects();
@@ -233,15 +252,7 @@ void App::init_assets() {
         throw;
     }
 
-    try {
-        std::cout << "Creating models..." << std::endl;
-        createModels();
-        std::cout << "Models created successfully" << std::endl;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Models creation error: " << e.what() << std::endl;
-        throw;
-    }
+
 
     initLights();
 }
@@ -359,9 +370,9 @@ void App::createTransparentObjects() {
 
     // Positions on flat plane
     std::vector<glm::vec3> positions = {
-        glm::vec3(100.0f * tileSizeGL, 0.01f, 50.0f * tileSizeGL),  // Tree
+        glm::vec3(50.0f * tileSizeGL, 0.01f, 50.0f * tileSizeGL),  // Tree
         glm::vec3(75.0f * tileSizeGL, 2.0f, 25.0f * tileSizeGL),    // Bunny
-        glm::vec3(75.0f * tileSizeGL, 0.01f, 100.0f * tileSizeGL)   // House
+        glm::vec3(5.0f * tileSizeGL, 0.01f, 50.0f * tileSizeGL)   // House
     };
 
     // Colors with alpha for transparency
@@ -398,9 +409,10 @@ void App::createTransparentObjects() {
                 model->meshes[0].diffuse_material = colors[i];
             }
         }
+        model->transparent = true;
         model->origin = positions[i];
         model->scale = scales[i];
-        model->transparent = true;
+
         transparent_objects.push_back(model);
         std::cout << "Placed transparent object " << i << " at position ("
             << positions[i].x << ", " << positions[i].y << ", " << positions[i].z << ")\n";
@@ -438,7 +450,7 @@ void App::createModels() {
     // Positions on flat plane
     std::vector<glm::vec3> positions = {
         glm::vec3(1.0f * tileSizeGL, 10.0f, 1.0f * tileSizeGL),      // Cube
-        glm::vec3(50.0f * tileSizeGL, 30.0f, 0.0f * tileSizeGL),    // Cat
+        glm::vec3(100.0f * tileSizeGL, 30.0f, 0.0f * tileSizeGL),    // Cat
         glm::vec3(75.0f * tileSizeGL, 2.0f, 75.0f * tileSizeGL)     // Tractor
     };
 
@@ -469,16 +481,14 @@ void App::createModels() {
         if (i == 1) { // Cat
             model->orientation = glm::vec3(glm::radians(270.0f), 0.0f, 0.0f);
         }
-        if (i == 2) { // Tractor
-            //model->orientation = glm::vec3(0.0f, glm::radians(0.0f), 0.0f);
-        }
         if (!model->meshes.empty()) {
             model->meshes[0].texture_id = model_textures[i];
             model->meshes[0].diffuse_material = colors[i];
         }
+        model->transparent = false;
         model->origin = positions[i];
         model->scale = scales[i];
-        model->transparent = false;
+
         models.push_back(model);
         std::cout << "Placed model " << i << " at position ("
             << positions[i].x << ", " << positions[i].y << ", " << positions[i].z << ")\n";
@@ -551,6 +561,10 @@ bool App::run() {
     }
     if (fov <= 0.0f) fov = DEFAULT_FOV;
 
+    glEnable(GL_PROGRAM_POINT_SIZE); // nutné pro gl_PointSize
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
     shader.activate();
     update_projection_matrix();
     shader.setUniform("uV_m", camera.GetViewMatrix());
@@ -580,7 +594,8 @@ bool App::run() {
         }
 
         shader.activate();
-        // Update lights (day/night cycle and movement)
+
+        // --- světla ---
         float sunAngle = currentTime * 0.3f;
         float daylight = glm::clamp(sin(sunAngle), 0.0f, 1.0f);
         float smoothDay = daylight * daylight;
@@ -591,65 +606,57 @@ bool App::run() {
         lights.sun.diffuse = glm::vec3(0.5f) + glm::vec3(0.3f) * smoothDay;
         lights.sun.specular = glm::vec3(1.0f);
 
-        // Move point light[0] (green, near tree): Circular with vertical oscillation
+        // bodová světla
         lights.pointLights[0].position = glm::vec3(
-            100.0f + 10.0f * sin(currentTime),      // Circular in X
-            30.0f + 5.0f * cos(currentTime * 0.5f), // Oscillate in Y
-            50.0f + 10.0f * cos(currentTime)        // Circular in Z
+            100.0f + 10.0f * sin(currentTime),
+            30.0f + 5.0f * cos(currentTime * 0.5f),
+            50.0f + 10.0f * cos(currentTime)
         );
-        float intensity0 = 0.7f + 0.3f * sin(currentTime);
-        lights.pointLights[0].diffuse = glm::vec3(0.0f, 1.0f, 0.0f) * intensity0;
-        lights.pointLights[0].specular = lights.pointLights[0].diffuse;
-
-        // Move point light[1] (red, near bunny): Elliptical in XZ plane
         lights.pointLights[1].position = glm::vec3(
-            75.0f + 12.0f * cos(currentTime * 0.4f), // Elliptical in X
-            30.0f,                                   // Fixed height
-            25.0f + 8.0f * sin(currentTime * 0.4f)   // Elliptical in Z
+            75.0f + 12.0f * cos(currentTime * 0.4f),
+            30.0f,
+            25.0f + 8.0f * sin(currentTime * 0.4f)
         );
-        float intensity1 = 0.7f + 0.3f * cos(currentTime * 0.4f);
-        lights.pointLights[1].diffuse = glm::vec3(1.0f, 0.0f, 0.0f) * intensity1;
-        lights.pointLights[1].specular = lights.pointLights[1].diffuse;
-
-        // Move point light[2] (blue, near house): Spiral upward/downward
         float spiralHeight = 30.0f + 10.0f * sin(currentTime * 0.3f);
         lights.pointLights[2].position = glm::vec3(
-            75.0f + 10.0f * cos(currentTime * 0.6f), // Circular in X
-            spiralHeight,                            // Spiral in Y
-            100.0f + 10.0f * sin(currentTime * 0.6f) // Circular in Z
+            75.0f + 10.0f * cos(currentTime * 0.6f),
+            spiralHeight,
+            100.0f + 10.0f * sin(currentTime * 0.6f)
         );
-        float intensity2 = 0.7f + 0.3f * sin(currentTime * 0.6f);
+        // změna intenzity
+        float intensity0 = 0.7f + 0.3f * static_cast<float>(sin(currentTime));
+        float intensity1 = 0.7f + 0.3f * static_cast<float>(cos(currentTime * 0.4f));
+        float intensity2 = 0.7f + 0.3f * static_cast<float>(sin(currentTime * 0.6f));
+
+        lights.pointLights[0].diffuse = glm::vec3(0.0f, 1.0f, 0.0f) * intensity0;
+        lights.pointLights[1].diffuse = glm::vec3(1.0f, 0.0f, 0.0f) * intensity1;
         lights.pointLights[2].diffuse = glm::vec3(0.0f, 0.0f, 1.0f) * intensity2;
+
+        lights.pointLights[0].specular = lights.pointLights[0].diffuse;
+        lights.pointLights[1].specular = lights.pointLights[1].diffuse;
         lights.pointLights[2].specular = lights.pointLights[2].diffuse;
 
-        // Update spotlight (camera-attached)
         lights.spotLights[0].position = camera.Position;
         lights.spotLights[0].direction = camera.Front;
 
-        // Update cube (index 0) position: oscillate vertically, stay above y=5.0f
-        if (!models.empty() && models.size() > 0) {
-            models[0]->origin.y = 6.0f + 5.0f * static_cast<float>(sin(currentTime * 0.5));
+        // pohyb krychle + aktualizace částic
+        if (!models.empty()) {
+            models[0]->origin.y = 6.0f + 5.0f * sin(currentTime * 0.5f);
+            glm::vec3 emitterPos = glm::vec3(models[0]->getModelMatrix() * glm::vec4(0.0f, 0.5f, 0.0f, 1.0f));
+            particleSystem.update(deltaTime, emitterPos, emitterPos.y);
         }
 
-        // Update tractor (index 2) position: move back-and-forth along X-axis
-        if (models.size() > 2) {
-            float tractorSpeed = 1.0f; // Speed of movement
-            float tractorRange = 40.0f;
-            float xPos = 170.0f + tractorRange * sin(currentTime * tractorSpeed);
-            models[2]->origin = glm::vec3(
-                75.0f,    // Fixed
-                40.0f,    // Fixed above ground
-                xPos      // Back-and-forth
-            );
-        }
+        // traktor
+        //if (models.size() > 2) {
+        float xPos = 170.0f + 40.0f * sin(currentTime);
+        models[2]->origin = glm::vec3(75.0f, 40.0f, xPos);
+        //}
 
         lights.apply(shader.getID());
 
-        // Camera movement with collision detection
+        // pohyb kamery
         glm::vec3 direction = camera.ProcessKeyboard(window, deltaTime);
         glm::vec3 newPos = camera.Position + direction * deltaTime;
-
-        // Apply gravity and jumping physics
         camera.VerticalVelocity += camera.Gravity * deltaTime;
         newPos.y += camera.VerticalVelocity * deltaTime;
         if (newPos.y <= 12.0f) {
@@ -657,81 +664,56 @@ bool App::run() {
             camera.VerticalVelocity = 0.0f;
             camera.OnGround = true;
         }
+
         glm::vec3 cameraMin = newPos - glm::vec3(0.5f, 1.0f, 0.5f);
         glm::vec3 cameraMax = newPos + glm::vec3(0.5f, 1.0f, 0.5f);
 
         bool collision = false;
-        for (const auto* model : models) {
-            if (AABBintersect(cameraMin, cameraMax, model->getMinBounds(), model->getMaxBounds())) {
-                collision = true;
-                break;
-            }
-        }
-        for (const auto* model : transparent_objects) {
-            if (AABBintersect(cameraMin, cameraMax, model->getMinBounds(), model->getMaxBounds())) {
-                collision = true;
-                break;
-            }
-        }
-        if (!collision) {
-            camera.Position = newPos;
-        }
+        for (auto* m : models)
+            if (AABBintersect(cameraMin, cameraMax, m->getMinBounds(), m->getMaxBounds())) collision = true;
+        for (auto* m : transparent_objects)
+            if (AABBintersect(cameraMin, cameraMax, m->getMinBounds(), m->getMaxBounds())) collision = true;
+        if (!collision) camera.Position = newPos;
 
         shader.setUniform("uV_m", camera.GetViewMatrix());
         shader.setUniform("viewPos", camera.Position);
 
-        for (auto& model : models) {
-            model->update(deltaTime);
-        }
+        for (auto& model : models) model->update(deltaTime);
 
         glClearColor(0.3f, 0.3f, 0.4f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        for (auto& wall : maze_walls) {
-            if (!wall->transparent) {
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, wall->meshes[0].texture_id);
-                shader.setUniform("tex0", 0);
-                shader.setUniform("uM_m", wall->getModelMatrix());
-                wall->draw();
-                checkGLError("After drawing wall");
-            }
+        // terrain + neprůhledné modely
+        for (auto& wall : maze_walls) if (!wall->transparent) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, wall->meshes[0].texture_id);
+            shader.setUniform("tex0", 0);
+            shader.setUniform("uM_m", wall->getModelMatrix());
+            wall->draw();
+        }
+        for (auto& model : models) if (!model->transparent) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, model->meshes[0].texture_id);
+            shader.setUniform("tex0", 0);
+            shader.setUniform("uM_m", model->getModelMatrix());
+            model->draw();
         }
 
-        for (auto& model : models) {
-            if (!model->transparent) {
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, model->meshes[0].texture_id);
-                shader.setUniform("tex0", 0);
-                shader.setUniform("uM_m", model->getModelMatrix());
-                model->draw();
-                checkGLError("After drawing model");
-            }
-        }
-
+        // vykresli particle efekt
+        particleSystem.render(projection_matrix, camera.GetViewMatrix());
+        shader.activate();
+        shader.setUniform("uV_m", camera.GetViewMatrix());
+        shader.setUniform("uP_m", projection_matrix);
+        shader.setUniform("viewPos", camera.Position);
+        // průhledné objekty
         std::vector<Model*> transparent_draw_list;
-        for (auto& wall : maze_walls) {
-            if (wall->transparent) {
-                transparent_draw_list.push_back(wall);
-            }
-        }
-        for (auto& obj : transparent_objects) {
-            transparent_draw_list.push_back(obj);
-        }
-        for (auto& model : models) {
-            if (model->transparent) {
-                transparent_draw_list.push_back(model);
-            }
-        }
-
+        for (auto& wall : maze_walls) if (wall->transparent) transparent_draw_list.push_back(wall);
+        for (auto& obj : transparent_objects) transparent_draw_list.push_back(obj);
+        for (auto& model : models) if (model->transparent) transparent_draw_list.push_back(model);
         std::sort(transparent_draw_list.begin(), transparent_draw_list.end(),
             [this](Model* a, Model* b) {
-                float dist_a = glm::distance(camera.Position, a->origin);
-                float dist_b = glm::distance(camera.Position, b->origin);
-                return dist_a > dist_b;
+                return glm::distance(camera.Position, a->origin) > glm::distance(camera.Position, b->origin);
             });
-
-        glEnable(GL_BLEND);
         glDepthMask(GL_FALSE);
         for (auto* model : transparent_draw_list) {
             glActiveTexture(GL_TEXTURE0);
@@ -739,14 +721,13 @@ bool App::run() {
             shader.setUniform("tex0", 0);
             shader.setUniform("uM_m", model->getModelMatrix());
             model->draw();
-            checkGLError("After drawing transparent model");
         }
         glDepthMask(GL_TRUE);
-        glDisable(GL_BLEND);
 
+        // ImGui
         if (show_imgui) {
             ImGui::SetNextWindowPos(ImVec2(10, 10));
-            ImGui::SetNextWindowSize(ImVec2(250, 120)); // Increased height for MSAA info
+            ImGui::SetNextWindowSize(ImVec2(250, 120));
             ImGui::Begin("Monitoring", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
             ImGui::Text("V-Sync: %s", vsync ? "ON" : "OFF");
             ImGui::Text("AA: %s, Samples: %d", antialiasing_enabled ? "ON" : "OFF", samples);
@@ -761,6 +742,7 @@ bool App::run() {
 
         glfwSwapBuffers(window);
         glfwPollEvents();
+
     }
     return true;
 }

@@ -1,4 +1,6 @@
 ﻿#pragma once
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtx/compatibility.hpp>
 #include <opencv2/opencv.hpp>
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -16,6 +18,7 @@
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
 #include "Lights.hpp"
+#include "ParticleSystem.hpp"
 
 using json = nlohmann::json;
 
@@ -60,6 +63,7 @@ private:
     GLuint VAO = 0, VBO = 0;
     GLuint shaderProgram = 0;
     Lights lights;
+    ParticleSystem particleSystem;
 
     void init_assets();
     void init_triangle();
